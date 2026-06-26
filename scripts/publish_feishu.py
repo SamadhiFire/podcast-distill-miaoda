@@ -114,11 +114,11 @@ def markdown_to_blocks(markdown: str) -> list[dict[str, Any]]:
         elif line.startswith("### "):
             blocks.append(block(5, "heading3", line[4:].strip()))
         elif re.match(r"^\d+\.\s+", line):
-            blocks.append(block(9, "ordered", re.sub(r"^\d+\.\s+", "", line).strip()))
+            blocks.append(block(2, "text", "  " + line.strip()))
         elif line.startswith("- "):
-            blocks.append(block(10, "bullet", line[2:].strip()))
+            blocks.append(block(2, "text", "  • " + line[2:].strip()))
         elif line.startswith("> "):
-            blocks.append(block(15, "quote", line[2:].strip()))
+            blocks.append(block(2, "text", "  ▎" + line[2:].strip()))
         else:
             blocks.append(block(2, "text", strip_markdown_emphasis(line)))
     if code_lines:
@@ -159,6 +159,74 @@ def notify(text: str) -> None:
     resp.raise_for_status()
 
 
+def list_root_nodes(token: str) -> list[dict[str, Any]]:
+    """List all top-level nodes (no parent) in the wiki space."""
+    space_id = required_env("FEISHU_WIKI_SPACE_ID")
+    all_nodes: list[dict[str, Any]] = []
+    page_token = ""
+    while True:
+        params: dict[str, Any] = {"page_size": 50}
+        if page_token:
+            params["page_token"] = page_token
+        resp = requests.get(
+            f"{FEISHU_API}/wiki/v2/spaces/{space_id}/nodes",
+            headers=feishu_headers(token),
+            params=params,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") != 0:
+            raise RuntimeError(f"Feishu list nodes error: {data}")
+        items = data.get("data", {}).get("items") or []
+        all_nodes.extend(items)
+        if not data.get("data", {}).get("has_more"):
+            break
+        page_token = data.get("data", {}).get("page_token", "")
+        if not page_token:
+            break
+    return all_nodes
+
+
+def delete_wiki_node(token: str, node_token: str) -> bool:
+    """Delete a wiki node. Returns True on success."""
+    space_id = required_env("FEISHU_WIKI_SPACE_ID")
+    try:
+        resp = requests.delete(
+            f"{FEISHU_API}/wiki/v2/spaces/{space_id}/nodes/{node_token}",
+            headers=feishu_headers(token),
+            timeout=30,
+        )
+        data = resp.json()
+        return data.get("code") == 0
+    except Exception:
+        return False
+
+
+def cleanup_old_daily_reports(token: str, current_title: str) -> int:
+    """Delete old daily report nodes (title starts with '日报 '). Returns count deleted."""
+    nodes = list_root_nodes(token)
+    deleted = 0
+    for node in nodes:
+        title = node.get("title", "")
+        node_token = node.get("node_token", "")
+        if not title or not node_token:
+            continue
+        # Delete nodes that look like old daily reports
+        is_old_report = (
+            "播客/视频更新日报" in title or
+            title.startswith("日报 ") or
+            title == "DEBUG" or title == "DEBUG2" or
+            title.startswith("TEST_")
+        )
+        # But keep the current report and 播客蒸馏室
+        if is_old_report and title != current_title and title != "播客蒸馏室":
+            print(f"  Deleting old node: {title}")
+            if delete_wiki_node(token, node_token):
+                deleted += 1
+    return deleted
+
+
 def main() -> int:
     args = parse_args()
     markdown_path = Path(args.file)
@@ -172,8 +240,11 @@ def main() -> int:
         token = get_tenant_access_token()
         document_id, node_token = create_wiki_doc(token, args.title)
         append_blocks(token, document_id, markdown_to_blocks(markdown))
-        suffix = f"\nnode_token: {node_token}" if node_token else ""
-        notify(f"今日日报已完成：{args.title}{suffix}")
+        # Clean up old daily reports so only the latest remains below 播客蒸馏室
+        deleted = cleanup_old_daily_reports(token, args.title)
+        print(f"Cleaned up {deleted} old report node(s)")
+        suffix = f"\nhttps://my.feishu.cn/wiki/{node_token}" if node_token else ""
+        notify(f"今日日报已完成：{args.title}\n飞书知识库已更新{suffix}")
         print(f"Published to Feishu Wiki: document={document_id} node={node_token}")
         return 0
     except Exception as exc:

@@ -96,24 +96,24 @@ Each item must follow this structure:
 **原始标题**：Original title ｜ **栏目**：Source name ｜ **平台**：YouTube/小宇宙 ｜ **更新**：YYYY-MM-DD HH:MM ｜ **分类**：中文分类 ｜ **推荐**：★★★★☆
 **链接**：https://...
 
-### 嘉宾与机构
+**嘉宾与机构**
 
-### 一句话摘要
+**一句话摘要**
 
-### 完整摘要
+**完整摘要**
 
-### 核心观点
+**核心观点**
 
-### 关键内容
+**关键内容**
 
-### 值得后续整理的问题
+**值得后续整理的问题**
 ```
 
 Metadata should be one line, with the source link on a second line. Never include `处理状态`.
 
 ## Guest And Organization Rules
 
-Under `### 嘉宾与机构`, list speakers and organizations when they can be inferred from the transcript or metadata.
+Under `**嘉宾与机构**`, list speakers and organizations when they can be inferred from the transcript or metadata.
 
 Use this format:
 
@@ -132,7 +132,7 @@ Rules:
 
 ## One-Sentence Summary Rules
 
-Under `### 一句话摘要`, write exactly one concise Chinese sentence.
+Under `**一句话摘要**`, write exactly one concise Chinese sentence.
 
 It must explain:
 
@@ -141,7 +141,7 @@ It must explain:
 
 ## Full Summary Rules
 
-Under `### 完整摘要`, write a structured summary based on the full transcript.
+Under `**完整摘要**`, write a structured summary based on the full transcript.
 
 Rules:
 
@@ -153,7 +153,7 @@ Rules:
 
 ## Core Viewpoints Rules
 
-Under `### 核心观点`, list 3 to 7 numbered points.
+Under `**核心观点**`, list 3 to 7 numbered points.
 
 Each point should be a real claim, not a topic label.
 
@@ -171,7 +171,7 @@ Bad:
 
 ## Key Content Rules
 
-`### 关键内容` must adapt to the category. Do not force technology fields onto business or humanities episodes.
+`**关键内容**` must adapt to the category. Do not force technology fields onto business or humanities episodes.
 
 For `科技 / AI / VC`, prefer:
 
@@ -221,7 +221,7 @@ If the transcript contains memorable lines, include only short Chinese paraphras
 
 ## Follow-Up Questions Rules
 
-Under `### 值得后续整理的问题`, list 2 to 5 questions.
+Under `**值得后续整理的问题**`, list 2 to 5 questions.
 
 Questions should support later knowledge-base work, such as:
 

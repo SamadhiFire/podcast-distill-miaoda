@@ -211,6 +211,8 @@ def fetch_youtube_source(
                 detail = ydl.extract_info(url, download=False)
             except Exception:
                 detail = entry
+            if detail is None:
+                continue
             duration = detail.get("duration") or entry.get("duration") or 0
             if source.get("min_duration", 0) and duration < source["min_duration"]:
                 continue

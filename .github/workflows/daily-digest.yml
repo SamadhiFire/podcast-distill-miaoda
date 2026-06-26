@@ -13,8 +13,8 @@ on:
         default: false
         type: boolean
   schedule:
-    # 23:30 Beijing time. Adjust if your sources publish later.
-    - cron: "30 15 * * *"
+    # 06:00 Beijing time (UTC+8 = previous day 22:00 UTC)
+    - cron: "0 22 * * *"
 
 permissions:
   contents: write

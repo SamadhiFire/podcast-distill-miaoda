@@ -159,27 +159,27 @@ def scaffold_item(item: dict[str, Any]) -> str:
 **原始标题**：{item.get('original_title') or item.get('title') or ''} ｜ **栏目**：{item.get('source_name', '')} ｜ **平台**：{platform_cn(item.get('platform'))} ｜ **更新**：{fmt_time(item.get('published_at'))} ｜ **分类**：{item.get('category', '待分类')} ｜ **推荐**：待评估
 **链接**：{item.get('url', '')}
 
-### 嘉宾与机构
+**嘉宾与机构**
 
 - 待生成：需要配置 LLM_BASE_URL 和 LLM_MODEL 后基于完整字幕识别。
 
-### 一句话摘要
+**一句话摘要**
 
 待生成：已保留完整字幕输入位置。
 
-### 完整摘要
+**完整摘要**
 
 待生成：需要配置大语言模型后基于完整字幕生成。
 
-### 核心观点
+**核心观点**
 
 1. 待生成。
 
-### 关键内容
+**关键内容**
 
 - **关键内容**：待生成。
 
-### 值得后续整理的问题
+**值得后续整理的问题**
 
 - 待生成。
 """
@@ -283,8 +283,7 @@ def main() -> int:
         item_markdown = summarize_item(item, transcript or item.get("description", ""), spec)
         item_markdowns.append((item, item_markdown))
 
-    lines = [f"# {args.date} 播客/视频更新日报", ""]
-    lines += ["# 概览", "", generate_overview(items, spec), ""]
+    lines = ["# 概览", "", generate_overview(items, spec), ""]
     lines += [
         "# 本日最值得关注的内容",
         "",
