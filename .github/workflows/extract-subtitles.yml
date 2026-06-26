@@ -1,0 +1,61 @@
+name: 提取视频字幕
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: '视频链接 (YouTube / B站)'
+        required: true
+      lang:
+        description: '字幕语言 (默认 zh-Hans)'
+        required: false
+        default: 'zh-Hans,en'
+  schedule:
+    # 每天北京时间 8:00 自动运行
+    - cron: '0 0 * * *'
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装 yt-dlp
+        run: |
+          python -m pip install --upgrade pip
+          pip install yt-dlp
+
+      - name: 提取字幕
+        env:
+          YT_URL: ${{ inputs.url }}
+          YT_LANG: ${{ inputs.lang }}
+        run: |
+          mkdir -p subtitles
+
+          # 如果没有手动传入 URL，从配置文件读取
+          if [ -z "$YT_URL" ]; then
+            echo "从 config/urls.txt 读取 URL 列表..."
+            python extract_subtitles.py --batch config/urls.txt --lang "$YT_LANG" --output subtitles
+          else
+            echo "处理单个 URL: $YT_URL"
+            python extract_subtitles.py "$YT_URL" --lang "$YT_LANG" --output subtitles
+          fi
+
+      - name: 提交字幕文件
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add subtitles/
+          if git diff --cached --quiet; then
+            echo "没有新的字幕文件"
+          else
+            git commit -m "📝 自动提取字幕 [skip ci]"
+            git push
+          fi
