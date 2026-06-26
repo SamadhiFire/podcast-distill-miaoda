@@ -42,7 +42,13 @@ def parse_args() -> argparse.Namespace:
 
 def report_date(value: str | None) -> datetime:
     if value:
-        return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=TZ_SHANGHAI)
+        value = value.strip()
+        for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(value, fmt).replace(tzinfo=TZ_SHANGHAI)
+            except ValueError:
+                continue
+        raise ValueError(f"Cannot parse date: {value}")
     return datetime.now(TZ_SHANGHAI)
 
 
