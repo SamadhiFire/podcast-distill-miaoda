@@ -82,7 +82,7 @@ jobs:
             printf '%s\n' "$INPUT_URLS" > config/urls.txt
           fi
 
-      - name: Extract subtitles
+      - name: Extract subtitles with up to five attempts
         env:
           BILIBILI_COOKIE: ${{ secrets.BILIBILI_COOKIE }}
         run: |
@@ -90,18 +90,19 @@ jobs:
           if [ -f cookies.txt ]; then
             COOKIES_ARG="--cookies cookies.txt"
           fi
-          python extract_subtitles.py \
+          python scripts/extract_with_retries.py \
             --batch config/urls.txt \
+            --max-attempts 5 \
+            --retry-delays 60,180,300,600 \
+            --results-json subtitles/extraction_results.json \
+            --failed-urls subtitles/failed_urls.txt \
+            -- \
             --output subtitles \
             --lang zh-Hans,zh-CN,zh,en \
             --whisper-bin whisper.cpp/build/bin/whisper-cli \
             --whisper-model whisper.cpp/models/ggml-small-q5_1.bin \
             --youtube-probe-timeout 90 \
             --youtube-sleep 5 \
-            --results-json subtitles/extraction_results.json \
-            --retry-urls subtitles/retry_urls.txt \
-            --asr-urls subtitles/asr_urls.txt \
-            --allow-partial \
             $COOKIES_ARG
 
       - name: Upload subtitle artifact

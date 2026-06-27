@@ -1,371 +1,121 @@
-# Daily Podcast/Video Report Format Specification
+# 日报内容契约（v2）
 
-This specification is written for an LLM. Follow it exactly when generating the daily report.
+## 目标读者
 
-## Core Goal
+日报首先是一份给普通但关心科技、商业与公共议题读者的“信息早餐”，目标是在 5—10 分钟内完成扫读。
 
-Generate a Chinese daily report from full transcripts of newly updated podcasts/videos. The report is for knowledge-base ingestion, not casual chat.
+- 读者先用 30 秒结论判断是否继续。
+- 想多了解时再看 3 个核心要点和两段背景。
+- 需要研究底稿时回到完整字幕与证据产物，不把所有研究内容摊在日报里。
 
-Do not summarize from platform descriptions alone. Platform descriptions may be used only as auxiliary metadata. The main summary must be based on the full transcript text.
+## 模型职责边界
 
-## Document Title
+模型只填写 JSON 内容，不负责 Markdown、XML 或飞书排版。
 
-Use this exact title format:
+程序固定负责：
 
-```md
-# YYYY-MM-DD 播客/视频更新日报
+- 标题层级、callout、grid、表格、颜色和链接。
+- 中英文与数字之间的空格。
+- 字数、条目数量和字段完整性。
+- 引用类型、证据 ID 与数字证据校验。
+- 输出失败后的修复重试和最终发布门禁。
+
+模型不得输出 Markdown 标题、表格、引用符号、XML 标签或代码围栏。
+
+## 单篇 JSON 字段
+
+```json
+{
+  "short_title": "18 字内中文标题",
+  "one_liner": {
+    "text": "30 字内完整句",
+    "source_refs": ["E0001"]
+  },
+  "why_it_matters": {
+    "text": "46 字内，说明与读者的关系",
+    "source_refs": ["E0001"]
+  },
+  "summary": [
+    {
+      "text": "105 字内，最多两段",
+      "source_refs": ["E0001"]
+    }
+  ],
+  "core_points": [
+    {
+      "text": "62 字内，恰好三条",
+      "source_refs": ["E0001"]
+    }
+  ],
+  "key_facts": [
+    {
+      "label": "14 字内",
+      "value": "26 字内",
+      "context": "42 字内",
+      "source_refs": ["E0001"]
+    }
+  ],
+  "takeaways": [
+    "普通读者可直接采用的看法或行动，最多两条"
+  ],
+  "guests": [
+    "人物（机构 / 角色），最多三条"
+  ],
+  "topics": [
+    "主题词，最多三个"
+  ],
+  "quote": {
+    "text": "46 字内",
+    "speaker": "讲者",
+    "kind": "verbatim | translated | paraphrase",
+    "source_refs": ["E0001"]
+  },
+  "importance_score": 4
+}
 ```
 
-## Required Top-Level Structure
+## 内容规则
 
-Use exactly these first-level headings:
+### 30 秒结论
 
-```md
-# YYYY-MM-DD 播客/视频更新日报
+- 真正控制在 30 个非空白字符以内。
+- 只表达一个主题和一个结果，不承担背景说明。
+- 与“为什么值得看”分工：前者说内容，后者说和读者的关系。
 
-# 概览
+### 背景摘要
 
-# 本日最值得关注的内容
+- 最多两段，每段只处理一个议题。
+- 每段不超过 105 个非空白字符。
+- 不按时间顺序复述，不重复核心要点。
 
-# 1. 科技 / AI / VC
+### 核心要点
 
-# 2. 商业 / 财经 / 投资
+- 固定三条。
+- 每条必须是判断或因果关系，不写“讨论了某话题”。
+- 每条必须引用真实证据 ID。
 
-# 3. 产品 / 创业 / 管理
+### 关键事实
 
-# 4. 新闻 / 时评 / 全球议题
+- 使用统一的“标签 / 值 / 上下文”结构，由程序渲染为两列表格。
+- 数字必须能在引用的证据片段中找到；无法校验时删除，不猜测。
+- 没有可靠事实时允许留空，不为了填表制造内容。
 
-# 5. 文化 / 社会 / 人文
-```
+### 你可以怎么用
 
-All category headings must be present even when a category has no updates.
+- 替代旧版“值得后续整理的问题”。
+- 写普通读者能执行的阅读方法、判断方式或行动提示。
+- 禁止把作者的研究 Todo List 伪装成读者思考题。
 
-## Overview Rules
+### 引用
 
-Under `# 概览`, write a complete integrated overview of today's updates.
+- 只有确实值得记忆的表达才使用。
+- `verbatim` 必须能在原字幕证据中逐字匹配。
+- 翻译或重构内容必须标为 `translated` / `paraphrase`，飞书端自动显示“意译”。
 
-The overview must cover:
+## 排版规则
 
-- Total number of updates.
-- Platform distribution, such as YouTube and Xiaoyuzhou.
-- Main themes across all updates.
-- Important cross-source patterns or disagreements.
-- Which updates are suitable for deep reading, light archive, or skipping.
-
-Do not use a table for the overview. Use compact paragraphs.
-
-## Most Noteworthy Content Rules
-
-Under `# 本日最值得关注的内容`, select 3 to 5 items when possible. Do not rank by views, likes, comments, or early engagement because newly published items are not comparable.
-
-Use this value standard:
-
-1. 信息密度: concrete ideas, cases, frameworks, numbers, methods.
-2. 一手程度: speaker is a founder, researcher, executive, investor, policy participant, creator, or direct witness.
-3. 时效/趋势价值: explains a current shift, turning point, new pattern, or ongoing debate.
-4. 可迁移性: can become a knowledge-base note, framework, writing material, investment lens, or product insight.
-5. 稀缺性: contains uncommon experience, inside view, deep retrospective, or cross-disciplinary insight.
-
-Output format:
-
-```md
-1. **中文短标题**
-   来源：栏目名。推荐理由：用 1-2 句话说明为什么值得关注。
-```
-
-## Category Item Heading Rules
-
-Inside each category, each item must use a second-level heading.
-
-Use Chinese parenthesized numbering:
-
-```md
-## （1）中文短标题
-## （2）中文短标题
-```
-
-Do not use `## 1.` numbering. Do not use English-only titles. If the original title is English, translate it into short Chinese.
-
-## Per-Item Required Structure
-
-Each item must follow this structure. **All field labels use `**粗体**` format, NOT `###` headings.**
-
-```md
-## （N）中文短标题
-
-**原始标题**：Original title ｜ **栏目**：Source name ｜ **平台**：YouTube/小宇宙 ｜ **更新**：YYYY-MM-DD HH:MM ｜ **时长**：1时23分45秒 ｜ **分类**：中文分类 ｜ **推荐**：★★★★☆
-**链接**：https://...
-
-**嘉宾与机构**
-
-**一句话摘要**
-
-**完整摘要**
-
-**核心观点**
-
-**关键内容**
-
-**值得后续整理的问题**
-```
-
-Metadata should be one line, with the source link on a second line. Never include `处理状态`.
-
-**Important**: `**嘉宾与机构**`, `**一句话摘要**`, `**完整摘要**`, `**核心观点**`, `**关键内容**`, `**值得后续整理的问题**` are bold text labels, NOT headings. Never use `###` for these fields.
-
-## Guest And Organization Rules
-
-Under `**嘉宾与机构**`, list speakers and organizations when they can be inferred from the transcript or metadata.
-
-Use this format:
-
-```md
-- 中文名（English Name）：中文公司名（English Company），职位1 / 职位2
-```
-
-Rules:
-
-- Chinese name comes first.
-- English name goes in parentheses.
-- If a company name is English, provide a Chinese translation first and the English name in parentheses when reasonable.
-- Include no more than 3 roles per person.
-- If the host is important, include the host.
-- If speakers are unknown, write `- 未明确识别：节目未提供足够清晰的嘉宾信息。`
-
-## One-Sentence Summary Rules
-
-Under `**一句话摘要**`, write exactly one concise Chinese sentence.
-
-It must explain:
-
-- What the episode is about.
-- Why it matters.
-
-## Full Summary Rules
-
-Under `**完整摘要**`, write a structured summary based on the full transcript.
-
-Rules:
-
-- Use 4 to 8 paragraphs.
-- Organize by issues and arguments, not by timestamp.
-- Explain who is talking, what they argue, what evidence or cases they use, and what changes or implications matter.
-- Include enough context for someone who did not listen to the episode.
-- Do not overquote. Use paraphrase by default.
-
-## Reader Hierarchy And Emphasis Rules
-
-The report should be scannable first and complete second:
-
-- Use first-level headings only for the report overview and category sections.
-- Use second-level headings only for individual items.
-- Use bold for field labels and a few short key terms; never bold a whole sentence or paragraph.
-- Use numbered lists for claims that have an order or need to be compared, and bullets for parallel facts.
-- Use blockquotes only for exact or near-verbatim speaker wording. If wording is reconstructed or translated, prefix it with `意译：`.
-- Do not use blockquotes for editor notes, status messages, ordinary summaries, or recommendations.
-- Keep each paragraph focused on one issue so readers can stop after the one-sentence summary or continue for the full context.
-
-## Core Viewpoints Rules
-
-Under `**核心观点**`, list 3 to 7 numbered points.
-
-**CRITICAL**: Each point MUST be a numbered list item starting with `1. `, `2. `, etc. NEVER use bare paragraphs without numbers. In Feishu, bare paragraphs are visually indistinguishable from the full summary above them.
-
-Each point should be a real claim, not a topic label.
-
-Good:
-
-```md
-1. 旧 benchmark 会被模型快速刷穿，因此评测必须更接近真实任务。
-2. 评测滞后于模型发展是结构性问题，而非暂时现象。
-```
-
-Bad:
-
-```md
-旧 benchmark 会被模型快速刷穿，因此评测必须更接近真实任务。
-评测滞后于模型发展是结构性问题。
-```
-
-## Key Content Rules
-
-`**关键内容**` must adapt to the category. Do not force technology fields onto business or humanities episodes.
-
-For `科技 / AI / VC`, prefer:
-
-- **关键概念**：
-- **技术判断**：
-- **产品/研究启发**：
-- **关键数据**：
-- **关键金句**：
-
-For `商业 / 财经 / 投资`, prefer:
-
-- **关键公司/行业**：
-- **商业判断**：
-- **市场信号**：
-- **关键数据**：
-- **关键金句**：
-
-For `产品 / 创业 / 管理`, prefer:
-
-- **关键问题**：
-- **方法论**：
-- **组织/增长启发**：
-- **可复用框架**：
-- **关键金句**：
-
-For `新闻 / 时评 / 全球议题`, prefer:
-
-- **事件背景**：
-- **核心争议**：
-- **各方立场**：
-- **关键时间线/数据**：
-- **关键金句**：
-
-For `文化 / 社会 / 人文`, prefer:
-
-- **讨论主题**：
-- **人物/作品/社会现象**：
-- **核心洞察**：
-- **情绪或价值判断**：
-- **关键金句**：
-
-Only include fields that have meaningful content. It is acceptable to omit irrelevant fields.
-
-If the transcript contains important numbers, dates, amounts, percentages, counts, or rankings, include them under `关键数据` or `关键时间线/数据`.
-
-If the transcript contains memorable lines, include only short quotes or clearly labeled paraphrases under `关键金句`. Each key quote MUST be wrapped in `> ` blockquote syntax, NOT as a plain list item. Prefix translated or reconstructed wording with `意译：`; never present a paraphrase as a verbatim quote.
-
-Example:
-
-```md
-- **关键金句**：
-
-> 意译：当 benchmark 成为目标时，它就不再是好的 benchmark
-```
-
-## Data Table Rules
-
-When `关键数据` or `关键时间线/数据` contains 3 or more numeric values, use a markdown table instead of a list:
-
-```md
-- **关键数据**：
-
-| 指标 | 数值 |
-|------|------|
-| 霍尔木兹海峡日均通过量 | 2000万桶 |
-| 净损失 | 1300万桶/日 |
-| 中国进口下降 | 500万桶/日 |
-```
-
-For 1-2 values, a list is acceptable.
-
-## Entry Divider Rules
-
-After `**值得后续整理的问题**`, every entry MUST end with a `---` divider line. This creates a clear visual boundary between entries in Feishu.
-
-```md
-**值得后续整理的问题**
-
-- 问题1
-- 问题2
-
----
-```
-
-## Follow-Up Questions Rules
-
-Under `**值得后续整理的问题**`, list 2 to 5 questions.
-
-Questions should support later knowledge-base work, such as:
-
-- Future research.
-- Topic clustering.
-- Investment/product/content judgment.
-- Follow-up reading.
-
-## Style Rules
-
-- Use Chinese as the main language.
-- Preserve original English names when useful.
-- Be concise but complete.
-- Do not use code blocks in the generated report unless the episode itself is about code and the code is important.
-- Use blockquotes only for truly important short quotes.
-- Do not invent guests, companies, data, or quotes.
-- If information is missing, say it is not clearly mentioned.
-
-## Complete Example (One Item)
-
-Below is a complete example of a single item. Follow this exact structure, heading levels, and spacing:
-
-```markdown
-## （1）OpenAI 为何放弃传统 Benchmark
-
-**原始标题**：Why Traditional Benchmarks Fail Modern AI Models with OpenAI Research Lead ｜ **栏目**：The Gradient ｜ **平台**：YouTube ｜ **更新**：2024-06-15 08:30 ｜ **时长**：36分19秒 ｜ **分类**：科技 / AI / VC ｜ **推荐**：★★★★★
-**链接**：https://www.youtube.com/watch?v=AZrU6y3pUcU
-
-**嘉宾与机构**
-
-- OpenAI 研究负责人（未公开具体姓名）：OpenAI，评测与对齐团队
-- 主持人：The Gradient 播客
-
-**一句话摘要**
-
-OpenAI 研究负责人系统阐述了传统 NLP benchmark 被大模型快速刷穿的原因，并提出未来评测必须转向真实任务评估与动态对抗测试。
-
-**完整摘要**
-
-节目围绕 AI 模型评测危机展开深度讨论。嘉宾指出，传统静态 benchmark（如 GLUE、SuperGLUE）在 GPT-4 时代已失去区分度，模型通过规模化和训练数据覆盖即可达到人类水平，这种"刷榜"行为掩盖了模型在真实场景中的脆弱性。
-
-嘉宾回顾了评测方法的三次演变：从早期任务-specific 的指标，到通用语言理解 benchmark，再到当前以人类偏好对齐为核心的评估范式。他强调，每一次评测升级都伴随着模型能力的跃迁，但评测本身始终滞后于模型发展。
-
-针对解决方案，嘉宾提出两个核心方向。第一是"真实任务评估"，即让模型在实际工作流中接受测试，而非在标准化数据集上比拼分数。第二是"动态对抗测试"，通过持续生成新难度样本，迫使模型展现真正的推理能力而非记忆能力。
-
-讨论还涉及评测商业化的伦理问题。嘉宾警告，如果评测标准被少数机构垄断，可能导致研究方向的人为扭曲，因此倡导开源社区参与评测标准的制定与更新。
-
-**核心观点**
-
-1. 静态 benchmark 的生命周期正在缩短，GPT-4 级别的模型可以在数月内刷穿原本设计给人类专家的测试集。
-2. 评测滞后于模型发展是结构性问题，而非暂时现象，需要从根本上改变评测范式。
-3. 真实任务评估比标准化分数更能反映模型的实际效用，但实施成本更高、更难规模化。
-4. 动态对抗测试可以有效区分"记忆"与"推理"，但需要持续投入且存在被逆向工程的风险。
-5. 评测标准的制定权不应集中在少数机构手中，开源参与是防止方向扭曲的关键。
-
-**关键内容**
-
-- **关键概念**：静态 benchmark、动态对抗测试、真实任务评估、人类偏好对齐、刷榜（benchmark saturation）
-- **技术判断**：传统 benchmark 已无法有效区分前沿模型；未来 2-3 年内评测行业将经历范式转移
-- **产品/研究启发**：企业在选型大模型时应设计自己的真实任务测试集，而非依赖公开 leaderboard
-- **关键数据**：GLUE 基准从 2018 年提出到被刷穿约 4 年；SuperGLUE 仅维持约 2 年有效区分度
-- **关键金句**：
-
-> 意译：当评测成为目标时，它就不再是好的评测
-
-**值得后续整理的问题**
-
-- 动态对抗测试的具体实现机制是什么？有哪些已有框架可以参考？
-- 国内企业如何建立适合自己的真实任务评估体系？
-- 评测标准开源化是否会带来新的安全和滥用风险？
-
----
-```
-
-## Common Mistakes to Avoid
-
-When generating the report, NEVER do the following:
-
-1. **Do not skip required fields.** Every item must have: 嘉宾与机构, 一句话摘要, 完整摘要, 核心观点, 关键内容, 值得后续整理的问题.
-2. **Do not use English-only headings.** All headings must be in Chinese.
-3. **Do not output the document title or category headings inside a single item.** A single item starts with `## （N）中文短标题` and ends after 值得后续整理的问题.
-4. **Do not rank by view count or likes** in the "最值得关注" section.
-5. **Do not invent information.** If a guest's name is unclear, say so. If no data is mentioned, omit the data field.
-6. **Do not use tables** in the overview section. Tables are only allowed in `关键数据` when there are 3+ numeric values.
-7. **Do not wrap the entire output in a code block.** Output raw Markdown.
-8. **Do not use `###` for field labels.** Guest, summary, viewpoints, key content, and follow-up questions are bold text (`**嘉宾与机构**`), NOT third-level headings (`### 嘉宾与机构`).
-9. **Do not use bare paragraphs for core viewpoints.** Every viewpoint MUST be a numbered list item (`1. `, `2. `, etc.).
-10. **Do not use bare paragraphs for most-noteworthy.** Every item in "本日最值得关注的内容" MUST be numbered (`1. **title**`, `2. **title**`, etc.).
-11. **Do not forget the `---` divider at the end of each entry.** Every entry must end with `---` after 值得后续整理的问题.
-12. **Do not skip `> ` blockquote for key quotes.** Every key quote under `关键金句` must use `> ` blockquote syntax.
-13. **Do not skip table format for 3+ data points.** Use `| 指标 | 数值 |` table format when 关键数据 has 3 or more values.
-14. **Do not write bare `$` signs.** Always write `\$` for literal dollar signs (e.g., `\$200`).
+- 中英文、中文与阿拉伯数字之间保留一个空格，如 `AI 资本开支`、`KOSPI 大涨`。
+- 加粗只用于短标签和短结论，不加粗整段。
+- 每篇使用同一信息顺序，关键事实统一为表格。
+- 分隔线不用于逐篇机械分隔；栏目使用灰色 callout 形成视觉区隔。
+- 开头提供指标分栏、3 分钟速览和一张今日信息地图。

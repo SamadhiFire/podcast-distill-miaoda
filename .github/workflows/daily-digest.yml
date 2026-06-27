@@ -116,7 +116,7 @@ jobs:
             --output-urls config/daily_urls.txt \
             --manifest-json "reports/daily_items_${REPORT_DATE}.manifest.json"
 
-      - name: Extract full subtitles for daily items
+      - name: Extract full subtitles with up to five attempts
         env:
           BILIBILI_COOKIE: ${{ secrets.BILIBILI_COOKIE }}
         shell: bash
@@ -125,46 +125,19 @@ jobs:
           if [ -f cookies.txt ]; then
             COOKIES_ARG="--cookies cookies.txt"
           fi
-          python extract_subtitles.py \
+          python scripts/extract_with_retries.py \
             --batch config/daily_urls.txt \
+            --max-attempts 5 \
+            --retry-delays 60,180,300,600 \
+            --results-json subtitles/extraction_results.json \
+            --failed-urls subtitles/failed_urls.txt \
+            -- \
             --output subtitles \
             --lang zh-Hans,zh-CN,zh,en \
             --whisper-bin whisper.cpp/build/bin/whisper-cli \
             --whisper-model whisper.cpp/models/ggml-small-q5_1.bin \
             --youtube-probe-timeout 90 \
             --youtube-sleep 5 \
-            --results-json subtitles/extraction_results.json \
-            --retry-urls subtitles/retry_urls.txt \
-            --asr-urls subtitles/asr_urls.txt \
-            --allow-partial \
-            $COOKIES_ARG
-
-      - name: Retry transient subtitle failures once
-        shell: bash
-        run: |
-          if [ ! -s subtitles/retry_urls.txt ]; then
-            echo "No transient subtitle failures to retry"
-            exit 0
-          fi
-          cp subtitles/retry_urls.txt subtitles/retry_batch.txt
-          echo "Transient failures found; waiting 10 minutes before one retry"
-          sleep 600
-          COOKIES_ARG=""
-          if [ -f cookies.txt ]; then
-            COOKIES_ARG="--cookies cookies.txt"
-          fi
-          python extract_subtitles.py \
-            --batch subtitles/retry_batch.txt \
-            --output subtitles \
-            --lang zh-Hans,zh-CN,zh,en \
-            --whisper-bin whisper.cpp/build/bin/whisper-cli \
-            --whisper-model whisper.cpp/models/ggml-small-q5_1.bin \
-            --youtube-probe-timeout 90 \
-            --youtube-sleep 10 \
-            --results-json subtitles/retry_extraction_results.json \
-            --retry-urls subtitles/retry_urls.txt \
-            --asr-urls subtitles/retry_asr_urls.txt \
-            --allow-partial \
             $COOKIES_ARG
 
       - name: Generate daily report from full transcripts
@@ -180,6 +153,8 @@ jobs:
             --items-json "$ITEMS_PATH" \
             --subtitles-dir subtitles \
             --require-transcripts \
+            --llm-policy required \
+            --llm-max-attempts 3 \
             --output "$REPORT_PATH"
 
       - name: Install lark-cli
@@ -211,6 +186,7 @@ jobs:
           name: daily-digest-${{ steps.report_date.outputs.date }}
           path: |
             ${{ env.REPORT_PATH }}
+            reports/daily-${{ steps.report_date.outputs.date }}.json
             ${{ env.ITEMS_PATH }}
             reports/daily_items_${{ steps.report_date.outputs.date }}.manifest.json
             config/daily_urls.txt

@@ -15,6 +15,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests
 
+from report_contract import build_report, clean_text, nonspace_len, normalize_digest, report_to_markdown
+
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 SPEC_PATH = BASE_DIR / "templates" / "daily_report_llm_spec.md"
@@ -34,6 +36,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--items-json", required=True)
     parser.add_argument("--subtitles-dir", default="subtitles")
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--output-json",
+        help="write the validated canonical report JSON (default: output path with .json suffix)",
+    )
+    parser.add_argument(
+        "--llm-max-attempts",
+        type=int,
+        default=int(os.getenv("LLM_MAX_ATTEMPTS", "3")),
+        help="maximum contract/repair attempts for each LLM call",
+    )
     parser.add_argument(
         "--require-transcripts",
         action="store_true",
@@ -112,6 +124,249 @@ def llm_chat(messages: list[dict[str, str]], temperature: float = 0.2) -> str:
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"].strip()
+
+
+def parse_json_object(text: str) -> dict[str, Any]:
+    candidate = (text or "").strip()
+    candidate = re.sub(r"^```(?:json)?\s*|\s*```$", "", candidate, flags=re.I | re.S).strip()
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("response does not contain a JSON object")
+    value = json.loads(candidate[start : end + 1])
+    if not isinstance(value, dict):
+        raise ValueError("response JSON must be an object")
+    return value
+
+
+def llm_json(
+    messages: list[dict[str, str]],
+    validator: Any,
+    max_attempts: int,
+) -> Any:
+    """Call a possibly weak model and repair contract failures deterministically."""
+    working = list(messages)
+    last_error = "unknown contract error"
+    for attempt in range(1, max(1, max_attempts) + 1):
+        raw = llm_chat(working, temperature=0.1)
+        try:
+            return validator(parse_json_object(raw))
+        except Exception as exc:
+            last_error = str(exc)
+            if attempt >= max_attempts:
+                break
+            working += [
+                {"role": "assistant", "content": raw[:12000]},
+                {
+                    "role": "user",
+                    "content": (
+                        f"上次输出未通过程序校验：{last_error}\n"
+                        "只修复 JSON 结构和字段约束。不要解释，不要使用 Markdown 代码块，不要补充证据中没有的事实。"
+                    ),
+                },
+            ]
+    raise RuntimeError(f"LLM output failed validation after {max_attempts} attempt(s): {last_error}")
+
+
+def build_evidence_map(transcript: str, segment_chars: int = 1400) -> dict[str, str]:
+    lines = [re.sub(r"\s+", " ", line).strip() for line in (transcript or "").splitlines()]
+    lines = [line for line in lines if line]
+    if not lines and transcript.strip():
+        lines = [transcript.strip()]
+    segments: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in lines:
+        if current and current_len + len(line) + 1 > segment_chars:
+            segments.append(" ".join(current))
+            current = []
+            current_len = 0
+        current.append(line)
+        current_len += len(line) + 1
+    if current:
+        segments.append(" ".join(current))
+    return {f"E{idx:04d}": segment for idx, segment in enumerate(segments, 1)}
+
+
+def evidence_batches(evidence: dict[str, str], max_chars: int) -> list[dict[str, str]]:
+    batches: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    current_len = 0
+    for ref, text in evidence.items():
+        addition = len(ref) + len(text) + 6
+        if current and current_len + addition > max_chars:
+            batches.append(current)
+            current = {}
+            current_len = 0
+        current[ref] = text
+        current_len += addition
+    if current:
+        batches.append(current)
+    return batches
+
+
+def normalize_partial(raw: dict[str, Any], allowed_refs: set[str]) -> dict[str, list[dict[str, Any]]]:
+    output: dict[str, list[dict[str, Any]]] = {}
+    for field in ("people", "facts", "claims", "data", "quotes"):
+        values: list[dict[str, Any]] = []
+        for entry in raw.get(field, []) if isinstance(raw.get(field), list) else []:
+            if not isinstance(entry, dict):
+                continue
+            text = re.sub(r"\s+", " ", str(entry.get("text", ""))).strip()
+            refs = [str(ref) for ref in entry.get("source_refs", []) if str(ref) in allowed_refs]
+            if text and refs:
+                values.append({"text": text[:260], "source_refs": refs[:3]})
+            if len(values) >= 10:
+                break
+        output[field] = values
+    if not any(output.values()):
+        raise ValueError("all evidence arrays are empty or have invalid source_refs")
+    return output
+
+
+def validate_final_digest(
+    raw: dict[str, Any], item: dict[str, Any], evidence: dict[str, str]
+) -> dict[str, Any]:
+    valid_refs = set(evidence)
+    scalar_limits = {"one_liner": 30, "why_it_matters": 46}
+    for field, limit in scalar_limits.items():
+        value = raw.get(field)
+        if not isinstance(value, dict) or not str(value.get("text", "")).strip():
+            raise ValueError(f"{field} must be an object with text and source_refs")
+        if nonspace_len(clean_text(value.get("text"))) > limit:
+            raise ValueError(f"{field} exceeds {limit} non-space characters")
+        if not any(str(ref) in valid_refs for ref in value.get("source_refs", [])):
+            raise ValueError(f"{field} must cite a valid source_ref")
+    list_rules = {"summary": (1, 2, 105), "core_points": (3, 3, 62)}
+    for field, (minimum, maximum, limit) in list_rules.items():
+        values = raw.get(field)
+        if not isinstance(values, list) or not minimum <= len(values) <= maximum:
+            raise ValueError(f"{field} must contain {minimum}..{maximum} item(s)")
+        for value in values:
+            if not isinstance(value, dict) or not str(value.get("text", "")).strip():
+                raise ValueError(f"every {field} item must contain text")
+            if nonspace_len(clean_text(value.get("text"))) > limit:
+                raise ValueError(f"a {field} item exceeds {limit} non-space characters")
+            if not any(str(ref) in valid_refs for ref in value.get("source_refs", [])):
+                raise ValueError(f"every {field} item must cite a valid source_ref")
+    takeaways = raw.get("takeaways")
+    if not isinstance(takeaways, list) or not 1 <= len(takeaways) <= 2:
+        raise ValueError("takeaways must contain one or two reader actions")
+    if any("?" in str(value) or "？" in str(value) for value in takeaways):
+        raise ValueError("takeaways must be actions, not research questions")
+    if any(nonspace_len(clean_text(value)) > 52 for value in takeaways):
+        raise ValueError("a takeaway exceeds 52 non-space characters")
+    if nonspace_len(clean_text(raw.get("short_title"))) > 18:
+        raise ValueError("short_title exceeds 18 non-space characters")
+    digest = normalize_digest(raw, item, evidence=evidence, strict_evidence=True)
+    digest["quality"] = "llm_evidence_validated"
+    return digest
+
+
+def extractive_digest(item: dict[str, Any], transcript: str) -> dict[str, Any]:
+    sentences = extract_sentences(transcript or item.get("description", ""), limit=9)
+    if len(sentences) < 3:
+        compact_source = re.sub(r"\s+", " ", transcript or item.get("description", "")).strip()
+        for start in range(0, min(len(compact_source), 720), 180):
+            fragment = compact_source[start : start + 180].strip()
+            if len(fragment) >= 20 and fragment not in sentences:
+                sentences.append(fragment)
+            if len(sentences) >= 3:
+                break
+    fallback = sentences or ["已取得完整字幕，但规则模式未能提取可靠语义摘要。"]
+    raw = {
+        "short_title": short_title(item),
+        "one_liner": fallback[0],
+        "why_it_matters": fallback[1] if len(fallback) > 1 else fallback[0],
+        "summary": fallback[1:3] or fallback[:1],
+        "core_points": fallback[:3],
+        "key_facts": [],
+        "takeaways": ["先用 30 秒结论判断是否值得打开原节目。", "涉及数据或决策时回到原字幕核对上下文。"],
+        "guests": [],
+        "topics": [item.get("category", "今日更新").split(" /")[0]],
+        "quote": None,
+        "importance_score": 3,
+        "quality": "deterministic_fallback",
+    }
+    return normalize_digest(raw, item)
+
+
+def summarize_item_contract(
+    item: dict[str, Any], transcript: str, max_attempts: int
+) -> dict[str, Any]:
+    if not llm_configured():
+        return extractive_digest(item, transcript)
+
+    evidence = build_evidence_map(transcript)
+    if not evidence:
+        raise RuntimeError("transcript is empty after evidence segmentation")
+    chunk_size = int(os.getenv("LLM_CHUNK_CHARS", "24000"))
+    partials: list[dict[str, list[dict[str, Any]]]] = []
+    for batch_index, batch in enumerate(evidence_batches(evidence, chunk_size), 1):
+        source = "\n\n".join(f"[{ref}] {text}" for ref, text in batch.items())
+        partials.append(
+            llm_json(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是事实提取器，不是文章作者。只输出一个 JSON 对象。"
+                            "每条信息必须引用输入中真实存在的 evidence ID；没有证据就不要输出。"
+                            "固定字段为 people、facts、claims、data、quotes，值均为数组；"
+                            "数组元素格式为 {\"text\":\"...\",\"source_refs\":[\"E0001\"]}。"
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"节目元数据：{json.dumps(item, ensure_ascii=False)}\n"
+                            f"证据批次：{batch_index}\n\n{source}"
+                        ),
+                    },
+                ],
+                lambda raw, refs=set(batch): normalize_partial(raw, refs),
+                max_attempts,
+            )
+        )
+
+    schema = {
+        "short_title": "18字内中文标题",
+        "one_liner": {"text": "30字内完整句", "source_refs": ["E0001"]},
+        "why_it_matters": {"text": "46字内，说明与读者的关系", "source_refs": ["E0001"]},
+        "summary": [{"text": "105字内，最多2段", "source_refs": ["E0001"]}],
+        "core_points": [{"text": "62字内，恰好3条", "source_refs": ["E0001"]}],
+        "key_facts": [
+            {"label": "14字内", "value": "26字内", "context": "42字内", "source_refs": ["E0001"]}
+        ],
+        "takeaways": ["读者可执行或可迁移的提示，1到2条，不写研究问题"],
+        "guests": ["人物（机构/角色），最多3条"],
+        "topics": ["主题词，最多3个"],
+        "quote": None,
+        "importance_score": 4,
+    }
+    return llm_json(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "你是中文信息早餐编辑，只负责填写 JSON 内容，绝不输出 Markdown 或 XML。"
+                    "读者要在30秒内决定是否继续读。所有事实、观点和摘要必须引用证据 ID。"
+                    "不要写‘值得后续研究的问题’，takeaways 必须是普通读者能直接采用的看法或行动。"
+                    "中英文之间保留空格。金句无法确认逐字原文时 kind 必须写 paraphrase。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"严格按此 JSON 结构返回：\n{json.dumps(schema, ensure_ascii=False)}\n\n"
+                    f"节目元数据：{json.dumps(item, ensure_ascii=False)}\n\n"
+                    f"已校验的证据提取：{json.dumps(partials, ensure_ascii=False)}"
+                ),
+            },
+        ],
+        lambda raw: validate_final_digest(raw, item, evidence),
+        max_attempts,
+    )
 
 
 def chunk_text(text: str, size: int) -> list[str]:
@@ -444,7 +699,6 @@ def main() -> int:
     if args.llm_policy == "required" and not llm_configured():
         print("LLM is required but LLM_BASE_URL and LLM_MODEL are not configured")
         return 2
-    spec = SPEC_PATH.read_text(encoding="utf-8")
     items = json.loads(Path(args.items_json).read_text(encoding="utf-8-sig"))
     # Filter out short clips (duration < 5 minutes = 300 seconds)
     original_count = len(items)
@@ -472,44 +726,31 @@ def main() -> int:
             print(f"- {item.get('title') or item.get('url')}")
         return 3
 
-    item_markdowns: list[tuple[dict[str, Any], str]] = []
+    item_digests: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for item, transcript in prepared_items:
-        item_markdown = summarize_item(item, transcript or item.get("description", ""), spec)
-        item_markdowns.append((item, item_markdown))
+        try:
+            digest = summarize_item_contract(item, transcript or item.get("description", ""), args.llm_max_attempts)
+        except Exception as exc:
+            print(f"Refusing to publish low-quality model output for {item.get('title')}: {exc}")
+            return 4
+        item_digests.append((item, digest))
 
-    lines = [
-        f"# {args.date} 播客/视频更新日报",
-        "",
-        "# 概览",
-        "",
-        generate_overview(items, spec),
-        "",
-    ]
-    lines += [
-        "# 本日最值得关注的内容",
-        "",
-        generate_noteworthy(items, [md for _, md in item_markdowns], spec),
-        "",
-    ]
-
-    by_category: dict[str, list[tuple[dict[str, Any], str]]] = {cat: [] for cat in CATEGORIES}
-    for item, md in item_markdowns:
-        by_category.setdefault(item.get("category", "待分类"), []).append((item, md))
-
-    for cat_idx, category in enumerate(CATEGORIES, 1):
-        lines += [f"# {cat_idx}. {category}", ""]
-        entries = by_category.get(category, [])
-        if not entries:
-            lines += ["今日无新增。", ""]
-            continue
-        for idx, (_, md) in enumerate(entries, 1):
-            lines.append(replace_index(md, idx).strip())
-            lines.append("")
+    report = build_report(args.date, item_digests)
+    report["generation"] = {
+        "mode": "llm_evidence_validated" if llm_configured() else "deterministic_fallback",
+        "model": os.getenv("LLM_MODEL", ""),
+        "max_contract_attempts": args.llm_max_attempts,
+        "transcripts_required": bool(args.require_transcripts),
+    }
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    print(f"Daily report written: {output}")
+    output.write_text(report_to_markdown(report), encoding="utf-8")
+    output_json = Path(args.output_json) if args.output_json else output.with_suffix(".json")
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"Reader report written: {output}")
+    print(f"Validated report JSON written: {output_json}")
     return 0
 
 

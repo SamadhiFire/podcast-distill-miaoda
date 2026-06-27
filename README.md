@@ -11,8 +11,8 @@
 ## ✨ 它能做什么
 
 - **多源采集**：自动从小宇宙播客、YouTube 频道、B 站等平台抓取每日更新
-- **字幕提取**：优先获取官方字幕，无字幕时使用 Whisper.cpp 本地语音识别转录
-- **智能摘要**：配置大语言模型时生成语义摘要；未配置时使用确定性的字幕抽取摘要
+- **字幕提取**：优先获取官方字幕，无字幕时使用 Whisper.cpp 本地语音识别；失败最多尝试 5 次
+- **智能摘要**：模型只填写带证据引用的 JSON，程序负责校验、限长与排版；弱模型连续 3 次不合格就停止发布
 - **分类整理**：按「科技/AI/VC」「商业/财经/投资」「产品/创业/管理」「新闻/时评/全球议题」「文化/社会/人文」五大板块分类
 - **自动发布**：每日早上自动运行；任一长内容缺少字幕时停止发布，避免把不完整日报写入飞书
 
@@ -22,11 +22,11 @@
 
 - **基本信息**：原始标题、栏目/频道、平台、更新时间、分类、推荐星级
 - **嘉宾与机构**：出场人物和相关机构
-- **一句话摘要**：快速了解核心内容
-- **完整摘要**：详细内容概括
-- **核心观点**：提炼关键论点
-- **关键内容**：值得记录的细节与数据
-- **值得后续整理的问题**：启发思考的延伸话题
+- **30 秒结论**：30 字内判断是否继续读
+- **核心要点**：固定 3 条关键判断
+- **关键事实**：统一两列表格呈现数据与上下文
+- **你可以怎么用**：普通读者可直接采用的行动或判断方式
+- **再多知道一点**：最多两段背景，不把日报写成研究论文
 
 ## ⏰ 运行时间
 
@@ -50,7 +50,9 @@ podcast-distill/
 ├── config/               # 播客源配置（urls.txt, podcasts.txt 等）
 ├── scripts/              # 核心脚本
 │   ├── collect_daily_items.py   # 每日更新采集
-│   ├── generate_daily_report.py # AI 摘要生成
+│   ├── extract_with_retries.py  # 字幕失败重试（最多 5 次）
+│   ├── generate_daily_report.py # 证据提取 + 结构化摘要
+│   ├── report_contract.py       # 内容校验 + Markdown/飞书富文本渲染
 │   └── publish_feishu.py        # 飞书文档发布
 ├── templates/            # 日报格式规范
 ├── whisper-bin-x64/      # Windows Whisper 预编译二进制+模型
@@ -64,6 +66,6 @@ podcast-distill/
 
 - 必需：`YOUTUBE_API_KEY`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_WIKI_SPACE_ID`、`FEISHU_NOTIFY_WEBHOOK`
 - 可选：`FEISHU_PARENT_NODE_TOKEN`、`YTDLP_COOKIES_B64`、`BILIBILI_COOKIE`
-- 语义级摘要：`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`
+- 必需的摘要模型：`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`
 
-不配置 LLM 时，Actions 仍能完成采集、字幕/ASR、规则摘要、飞书写入和群通知，但摘要质量不会等同于人工或大模型语义整理。工作流固定使用 whisper.cpp v1.9.1 与 `small-q5_1` 模型，并在生成日报前检查所有五分钟以上内容是否已有完整转录。
+GitHub Actions 的正式日报要求配置 LLM。模型输出会经过 JSON 结构、证据 ID、数字来源、长度和字段数量校验；单次输出不合格会要求模型修复，连续 3 次失败则不写入飞书。工作流固定使用 whisper.cpp v1.9.1 与 `small-q5_1` 模型，字幕失败最多尝试 5 次；最终仍失败或任一五分钟以上内容缺少完整转录时，整次日报停止发布。

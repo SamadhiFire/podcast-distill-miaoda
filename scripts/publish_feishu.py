@@ -15,6 +15,8 @@ from typing import Any
 
 import requests
 
+from report_contract import report_to_feishu_xml
+
 
 FEISHU_API = "https://open.feishu.cn/open-apis"
 
@@ -23,6 +25,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", required=True)
     parser.add_argument("--title", required=True)
+    parser.add_argument("--doc-token", help="overwrite an existing Feishu document instead of creating a new one")
+    parser.add_argument("--node-token", help="existing Wiki node token, used for the notification URL")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--cleanup-old",
@@ -232,8 +236,14 @@ def markdown_to_feishu_xml(markdown: str) -> str:
     return xml
 
 
-def write_doc_via_larkcli(doc_token: str, markdown: str, app_id: str, app_secret: str, title: str) -> None:
-    """Write enhanced markdown to a Feishu docx using lark-cli."""
+def write_doc_via_larkcli(
+    doc_token: str,
+    xml_content: str,
+    app_id: str,
+    app_secret: str,
+    command: str = "append",
+) -> None:
+    """Write deterministic XML to a Feishu docx using lark-cli."""
     import shutil
     import subprocess
     import tempfile
@@ -244,14 +254,14 @@ def write_doc_via_larkcli(doc_token: str, markdown: str, app_id: str, app_secret
             "lark-cli not found in PATH. Install with: npm install -g @larksuite/cli"
         )
 
-    enhanced = markdown_to_feishu_xml(markdown)
+    ET.fromstring(f"<root>{xml_content}</root>")
 
     # Write enhanced markdown to temp file in repo root (lark-cli requires relative paths)
     repo_root = Path(__file__).resolve().parent.parent
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".xml", encoding="utf-8", delete=False, dir=str(repo_root)
     ) as f:
-        f.write(enhanced)
+        f.write(xml_content)
         temp_path = f.name
         temp_rel = os.path.relpath(temp_path, str(repo_root))
 
@@ -265,7 +275,7 @@ def write_doc_via_larkcli(doc_token: str, markdown: str, app_id: str, app_secret
             [
                 lark_cli, "docs", "+update",
                 "--doc", doc_token,
-                "--command", "append",
+                "--command", command,
                 "--doc-format", "xml",
                 "--content", f"@{temp_rel}",
                 "--as", "bot",
@@ -283,7 +293,7 @@ def write_doc_via_larkcli(doc_token: str, markdown: str, app_id: str, app_secret
                 f"lark-cli docs +update failed (exit {result.returncode}):\n"
                 f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
             )
-        print(f"lark-cli: wrote {len(enhanced)} chars to doc {doc_token}")
+        print(f"lark-cli: {command} wrote {len(xml_content)} chars to doc {doc_token}")
     finally:
         os.unlink(temp_path)
 
@@ -410,6 +420,18 @@ def build_notify_summary(markdown: str) -> str:
     return "**今日精选：**\n" + "\n".join(top_items[:5])
 
 
+def build_notify_summary_from_report(report: dict[str, Any]) -> str:
+    items = report.get("items", [])
+    lines: list[str] = []
+    for rank, idx in enumerate(report.get("top_items", [])[:3], 1):
+        if isinstance(idx, int) and 0 <= idx < len(items):
+            item = items[idx]
+            lines.append(f"{rank}. **{item.get('short_title', '')}**：{item.get('one_liner', '')}")
+    if not lines:
+        return "今日日报已生成，点击下方按钮查看完整内容。"
+    return "**3 分钟速览：**\n" + "\n".join(lines)
+
+
 def cleanup_old_daily_reports(token: str, current_title: str) -> int:
     nodes = list_root_nodes(token)
     deleted = 0
@@ -435,10 +457,20 @@ def cleanup_old_daily_reports(token: str, current_title: str) -> int:
 
 def main() -> int:
     args = parse_args()
-    markdown_path = Path(args.file)
-    markdown = markdown_path.read_text(encoding="utf-8")
+    source_path = Path(args.file)
+    source_text = source_path.read_text(encoding="utf-8")
+    report: dict[str, Any] | None = None
+    report_path = source_path if source_path.suffix.lower() == ".json" else source_path.with_suffix(".json")
+    if report_path.exists():
+        try:
+            candidate = json.loads(report_path.read_text(encoding="utf-8"))
+            if isinstance(candidate, dict) and candidate.get("schema_version") == 2:
+                report = candidate
+        except (OSError, ValueError):
+            report = None
+    xml_content = report_to_feishu_xml(report) if report else markdown_to_feishu_xml(source_text)
     if args.dry_run or not os.getenv("FEISHU_APP_ID"):
-        print(f"Dry run: would publish {markdown_path} as {args.title}")
+        print(f"Dry run: would publish {source_path} as {args.title} ({len(xml_content)} XML chars)")
         url = f"https://my.feishu.cn/wiki/DRY_RUN"
         summary = "日报处于 dry-run 模式，飞书知识库未实际更新。"
         notify(args.title, url, summary)
@@ -448,13 +480,19 @@ def main() -> int:
         token = get_tenant_access_token()
         app_id = required_env("FEISHU_APP_ID")
         app_secret = required_env("FEISHU_APP_SECRET")
-        document_id, node_token = create_wiki_doc(token, args.title)
-        write_doc_via_larkcli(document_id, markdown, app_id, app_secret, args.title)
+        if args.doc_token:
+            document_id = args.doc_token
+            node_token = args.node_token
+            command = "overwrite"
+        else:
+            document_id, node_token = create_wiki_doc(token, args.title)
+            command = "append"
+        write_doc_via_larkcli(document_id, xml_content, app_id, app_secret, command=command)
         if args.cleanup_old:
             deleted = cleanup_old_daily_reports(token, args.title)
             print(f"Cleaned up {deleted} old report node(s)")
         url = f"https://my.feishu.cn/wiki/{node_token}" if node_token else ""
-        summary = build_notify_summary(markdown)
+        summary = build_notify_summary_from_report(report) if report else build_notify_summary(source_text)
         notify(args.title, url, summary)
         print(f"Published to Feishu Wiki: document={document_id} node={node_token}")
         return 0
