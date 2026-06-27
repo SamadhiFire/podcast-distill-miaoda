@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sys
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,8 @@ except ModuleNotFoundError:  # Imported as scripts.publish_feishu in tests/tools
 
 
 FEISHU_API = "https://open.feishu.cn/open-apis"
+DEFAULT_PINNED_WIKI_TITLE = "🎧 播客蒸馏室"
+DAILY_REPORT_TITLE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+播客(?:与|/)?视频更新日报$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -366,6 +369,110 @@ def list_root_nodes(token: str) -> list[dict[str, Any]]:
     return all_nodes
 
 
+def move_wiki_node(token: str, node_token: str, *, parent_token: str | None = None) -> None:
+    """Move an existing node without recreating it, preserving its permanent URL."""
+    space_id = required_env("FEISHU_WIKI_SPACE_ID")
+    body: dict[str, Any] = {"target_space_id": space_id}
+    if parent_token is not None:
+        body["target_parent_token"] = parent_token
+    endpoint = f"{FEISHU_API}/wiki/v2/spaces/{space_id}/nodes/{node_token}/move"
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                endpoint,
+                headers=feishu_headers(token),
+                json=body,
+                timeout=30,
+            )
+            if resp.status_code == 429 or resp.status_code >= 500:
+                resp.raise_for_status()
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != 0:
+                raise RuntimeError(f"Feishu move wiki node error: {data}")
+            return
+        except (requests.RequestException, ValueError):
+            if attempt == 2:
+                raise
+            time.sleep(2 ** attempt)
+
+
+def sort_daily_reports_below_pinned_page(token: str) -> int:
+    """Keep the hub first and daily reports in descending date order.
+
+    Feishu's public Wiki API has no explicit sibling-position field. Moving
+    existing report nodes under the pinned hub and then back to the root in
+    desired order is the only supported way to reorder them while preserving
+    every node token and document URL.
+    """
+    if os.getenv("FEISHU_SORT_DAILY_REPORTS", "1").lower() in {"0", "false", "no"}:
+        return 0
+    pinned_title = os.getenv("FEISHU_PINNED_WIKI_TITLE", DEFAULT_PINNED_WIKI_TITLE)
+    nodes = list_root_nodes(token)
+    pinned = next((node for node in nodes if node.get("title") == pinned_title), None)
+    if not pinned:
+        raise RuntimeError(f"Pinned Wiki page not found: {pinned_title}")
+    if not nodes or nodes[0].get("node_token") != pinned.get("node_token"):
+        raise RuntimeError(f"Pinned Wiki page is not currently first: {pinned_title}")
+
+    reports = [node for node in nodes if DAILY_REPORT_TITLE_RE.match(node.get("title", ""))]
+    desired = sorted(
+        reports,
+        key=lambda node: DAILY_REPORT_TITLE_RE.match(node.get("title", "")).group(1),
+        reverse=True,
+    )
+    actual_tokens = [node.get("node_token") for node in reports]
+    desired_tokens = [node.get("node_token") for node in desired]
+    first_report_index = next(
+        (idx for idx, node in enumerate(nodes) if node.get("node_token") in set(actual_tokens)),
+        len(nodes),
+    )
+    if actual_tokens == desired_tokens and (not reports or first_report_index == 1):
+        return 0
+
+    unrelated = [
+        node for node in nodes[1:] if node.get("node_token") not in set(actual_tokens)
+    ]
+    if unrelated:
+        titles = ", ".join(node.get("title", "") for node in unrelated)
+        raise RuntimeError(
+            "Cannot safely place reports immediately below the pinned page while unrelated root nodes exist: "
+            + titles
+        )
+
+    pinned_token = str(pinned["node_token"])
+    # Stay below the documented 100 move requests/minute limit as the archive grows.
+    delay = 0.7 if len(reports) >= 40 else 0.1
+    try:
+        for node in reports:
+            move_wiki_node(token, str(node["node_token"]), parent_token=pinned_token)
+            time.sleep(delay)
+        for node in desired:
+            move_wiki_node(token, str(node["node_token"]))
+            time.sleep(delay)
+    except Exception:
+        # Best-effort recovery: never intentionally leave a daily report nested
+        # under the hub if a later move is interrupted. The next run can sort it.
+        try:
+            root_tokens = {str(node.get("node_token")) for node in list_root_nodes(token)}
+            for node in desired:
+                node_token = str(node["node_token"])
+                if node_token not in root_tokens:
+                    move_wiki_node(token, node_token)
+                    root_tokens.add(node_token)
+                    time.sleep(delay)
+        except Exception as recovery_exc:
+            print(f"Wiki ordering recovery also failed: {recovery_exc}", file=sys.stderr)
+        raise
+
+    verified = list_root_nodes(token)
+    verified_tokens = [node.get("node_token") for node in verified]
+    expected = [pinned_token, *desired_tokens]
+    if verified_tokens[: len(expected)] != expected:
+        raise RuntimeError("Wiki root ordering verification failed after reordering")
+    return len(reports)
+
+
 def delete_wiki_node(token: str, node_token: str) -> bool:
     """Delete a wiki node. Returns True on success."""
     space_id = required_env("FEISHU_WIKI_SPACE_ID")
@@ -473,6 +580,8 @@ def main() -> int:
             report = None
     if report and source_path.suffix.lower() != ".json":
         report = enrich_report_from_legacy_markdown(report, source_text)
+    if report:
+        report["title"] = args.title
     xml_content = report_to_feishu_xml(report) if report else markdown_to_feishu_xml(source_text)
     if args.dry_run or not os.getenv("FEISHU_APP_ID"):
         print(f"Dry run: would publish {source_path} as {args.title} ({len(xml_content)} XML chars)")
@@ -493,6 +602,9 @@ def main() -> int:
             document_id, node_token = create_wiki_doc(token, args.title)
             command = "append"
         write_doc_via_larkcli(document_id, xml_content, app_id, app_secret, command=command)
+        reordered = sort_daily_reports_below_pinned_page(token)
+        if reordered:
+            print(f"Reordered {reordered} daily report node(s) below the pinned Wiki page")
         if args.cleanup_old:
             deleted = cleanup_old_daily_reports(token, args.title)
             print(f"Cleaned up {deleted} old report node(s)")

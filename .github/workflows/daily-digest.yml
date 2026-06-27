@@ -166,7 +166,6 @@ jobs:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_WIKI_SPACE_ID: ${{ secrets.FEISHU_WIKI_SPACE_ID }}
-          FEISHU_PARENT_NODE_TOKEN: ${{ secrets.FEISHU_PARENT_NODE_TOKEN }}
           FEISHU_NOTIFY_WEBHOOK: ${{ secrets.FEISHU_NOTIFY_WEBHOOK }}
         shell: bash
         run: |
@@ -176,7 +175,7 @@ jobs:
           fi
           python scripts/publish_feishu.py \
             --file "$REPORT_PATH" \
-            --title "${REPORT_DATE} 播客/视频更新日报" \
+            --title "${REPORT_DATE} 播客与视频更新日报" \
             $DRY_RUN
 
       - name: Upload report artifact

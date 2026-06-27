@@ -31,6 +31,8 @@
 
 飞书目录只显示“今日信息地图 / 3 分钟速览 / 全部更新 / 五大分类 / 单篇标题”。单篇内部字段均为正文加粗，不会挤满目录。
 
+知识库根目录中，“🎧 播客蒸馏室”固定排在第一位；每日新报告发布后，程序会保留原文档链接，并将所有“YYYY-MM-DD 播客与视频更新日报”按日期从新到旧排列在它下面。
+
 ## ⏰ 运行时间
 
 - **每日北京时间 06:15** 自动运行（数据窗口在 06:00 关闭后再启动）
@@ -68,7 +70,7 @@ podcast-distill/
 主工作流为 `.github/workflows/daily-digest.yml`。在 GitHub 仓库的 Actions Secrets 中配置：
 
 - 必需：`YOUTUBE_API_KEY`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_WIKI_SPACE_ID`、`FEISHU_NOTIFY_WEBHOOK`
-- 可选：`FEISHU_PARENT_NODE_TOKEN`、`YTDLP_COOKIES_B64`、`BILIBILI_COOKIE`
+- 可选：`YTDLP_COOKIES_B64`、`BILIBILI_COOKIE`
 - 必需的摘要模型：`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`
 
 GitHub Actions 的正式日报要求配置 LLM。模型输出会经过 JSON 结构、证据 ID、数字来源、长度和字段数量校验；单次输出不合格会要求模型修复，连续 3 次失败则不写入飞书。工作流固定使用 whisper.cpp v1.9.1 与 `small-q5_1` 模型，字幕失败最多尝试 5 次；最终仍失败或任一五分钟以上内容缺少完整转录时，整次日报停止发布。

@@ -259,6 +259,7 @@ def build_report(date: str, item_digests: list[tuple[dict[str, Any], dict[str, A
     return {
         "schema_version": 2,
         "date": date,
+        "title": f"{date} 播客与视频更新日报",
         "reader_mode": "breakfast",
         "item_count": len(items),
         "read_minutes": max(3, min(12, math.ceil(len(items) * 0.7))),
@@ -357,7 +358,8 @@ def report_to_feishu_xml(report: dict[str, Any]) -> str:
     themes = report.get("themes", [])
     platform_text = " · ".join(f"{name} {count} 条" for name, count in report.get("platform_counts", {}).items())
     theme_text = " · ".join(themes) if themes else "多主题更新"
-    parts: list[str] = []
+    title = report.get("title") or f"{report.get('date', '')} 播客与视频更新日报"
+    parts: list[str] = [f"<title>{_x(title)}</title>"]
 
     parts.append(
         '<callout emoji="☕" background-color="light-blue" border-color="blue">'
