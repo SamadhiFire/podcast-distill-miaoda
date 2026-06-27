@@ -5,7 +5,7 @@ Unified subtitle extractor for YouTube, Bilibili and Xiaoyuzhou.
 Outputs timed subtitles plus plain text:
   - YouTube: yt-dlp native subtitles first, youtube-transcript-api fallback
   - Bilibili: public player subtitle API first, yt-dlp + ASR fallback
-  - Xiaoyuzhou: official transcript API when authenticated, ASR fallback
+  - Xiaoyuzhou: public episode audio enclosure + ASR
 """
 
 from __future__ import annotations
@@ -13,14 +13,16 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import multiprocessing
 import os
+import queue
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -54,6 +56,27 @@ class ExtractionResult:
     text_path: str | None = None
     metadata_path: str | None = None
     message: str = ""
+    reason_code: str = ""
+    retryable: bool = False
+
+
+def classify_youtube_failure(message: str) -> tuple[str, bool]:
+    text = (message or "").lower()
+    if "sign in to confirm" in text or "not a bot" in text or "captcha" in text:
+        return "youtube_bot_check", True
+    if "429" in text or "too many requests" in text:
+        return "youtube_rate_limited", True
+    if "403" in text or "requestblocked" in text or "ipblocked" in text:
+        return "youtube_blocked", True
+    if "timeout" in text or "timed out" in text:
+        return "youtube_timeout", True
+    if "transcriptsdisabled" in text or "transcripts are disabled" in text:
+        return "youtube_transcripts_disabled", False
+    if "notranscriptfound" in text or "no matching captions" in text:
+        return "youtube_no_matching_transcript", False
+    if "video unavailable" in text or "videounavailable" in text:
+        return "youtube_video_unavailable", False
+    return "youtube_transient_failure", True
 
 
 def detect_platform(url: str) -> str:
@@ -329,10 +352,15 @@ def request_text(url: str, headers: dict[str, str] | None = None, timeout: int =
         try:
             resp = requests.get(url, headers=merged, timeout=timeout)
             resp.raise_for_status()
-            resp.encoding = resp.encoding or "utf-8"
-            return resp.text
+            # Subtitle and Xiaoyuzhou payloads are UTF-8. Some endpoints omit
+            # the charset, causing requests to guess ISO-8859-1 and corrupt
+            # Chinese text while still returning a successful response.
+            return resp.content.decode("utf-8-sig", errors="replace")
         except requests.RequestException as exc:
-            last_error = exc
+            status = exc.response.status_code if exc.response is not None else None
+            last_error = f"{type(exc).__name__}: HTTP {status}" if status else type(exc).__name__
+            if status in {401, 403, 429}:
+                break
             time.sleep(1 + attempt)
     raise RuntimeError(f"download failed: {last_error}")
 
@@ -351,8 +379,14 @@ def run_command(cmd: list[str], timeout: int) -> subprocess.CompletedProcess[str
 def choose_ytdlp_subtitle(info: dict[str, Any], preferred: list[str]) -> tuple[str, dict[str, Any], bool] | None:
     native = info.get("subtitles") or {}
     automatic = info.get("automatic_captions") or {}
-    for generated, captions in [(False, native), (True, automatic)]:
-        key = choose_lang_key(list(captions.keys()), preferred)
+    caption_groups: list[tuple[bool, dict[str, Any], list[str]]] = [(False, native, preferred)]
+    original_auto_keys = [key for key in automatic if key.endswith("-orig")]
+    if original_auto_keys:
+        original_auto = {key: automatic[key] for key in original_auto_keys}
+        caption_groups.append((True, original_auto, preferred))
+    caption_groups.append((True, automatic, preferred))
+    for generated, captions, language_order in caption_groups:
+        key = choose_lang_key(list(captions.keys()), language_order)
         if not key:
             continue
         formats = captions.get(key) or []
@@ -366,62 +400,149 @@ def choose_ytdlp_subtitle(info: dict[str, Any], preferred: list[str]) -> tuple[s
     return None
 
 
+def _ytdlp_caption_probe_worker(
+    url: str,
+    preferred_langs: list[str],
+    cookies: str | None,
+    result_queue: Any,
+) -> None:
+    """Probe yt-dlp in a disposable process so the parent can enforce a deadline."""
+    try:
+        from yt_dlp import YoutubeDL
+
+        opts: dict[str, Any] = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "noplaylist": True,
+            "socket_timeout": 15,
+            "retries": 1,
+            "extractor_retries": 1,
+            "sleep_interval_requests": 1,
+        }
+        if cookies:
+            opts["cookiefile"] = cookies
+        with YoutubeDL(opts) as downloader:
+            info = downloader.extract_info(url, download=False) or {}
+        if "entries" in info and info["entries"]:
+            info = info["entries"][0]
+        chosen = choose_ytdlp_subtitle(info, preferred_langs)
+        selected = None
+        if chosen:
+            lang, item, generated = chosen
+            selected = {
+                "lang": lang,
+                "url": item.get("url"),
+                "ext": item.get("ext") or "vtt",
+                "generated": generated,
+            }
+        result_queue.put(
+            {
+                "ok": True,
+                "media_id": info.get("id"),
+                "title": info.get("title"),
+                "selected": selected,
+            }
+        )
+    except Exception as exc:
+        result_queue.put({"ok": False, "error": str(exc)})
+
+
+def run_ytdlp_caption_probe(
+    url: str,
+    preferred_langs: list[str],
+    cookies: str | None,
+    timeout: int,
+) -> dict[str, Any]:
+    context = multiprocessing.get_context("spawn")
+    result_queue = context.Queue(maxsize=1)
+    process = context.Process(
+        target=_ytdlp_caption_probe_worker,
+        args=(url, preferred_langs, cookies, result_queue),
+        daemon=True,
+    )
+    process.start()
+    process.join(timeout=max(1, timeout))
+    if process.is_alive():
+        process.terminate()
+        process.join(5)
+        if process.is_alive() and hasattr(process, "kill"):
+            process.kill()
+            process.join(2)
+        print(f"  yt-dlp metadata timed out after {timeout}s")
+        result_queue.close()
+        return {
+            "ok": False,
+            "error": f"yt-dlp metadata timed out after {timeout}s",
+            "reason_code": "youtube_timeout",
+            "retryable": True,
+        }
+    try:
+        payload = result_queue.get(timeout=2)
+    except queue.Empty:
+        print(f"  yt-dlp metadata worker exited with code {process.exitcode} without a result")
+        return {
+            "ok": False,
+            "error": f"yt-dlp worker exited with code {process.exitcode}",
+            "reason_code": "youtube_transient_failure",
+            "retryable": True,
+        }
+    finally:
+        result_queue.close()
+    if not payload.get("ok"):
+        print(f"  yt-dlp metadata failed: {payload.get('error', 'unknown error')}")
+        reason_code, retryable = classify_youtube_failure(payload.get("error", ""))
+        payload["reason_code"] = reason_code
+        payload["retryable"] = retryable
+    return payload
+
+
 def extract_youtube_ytdlp(
     url: str,
     output_dir: Path,
     preferred_langs: list[str],
     cookies: str | None,
     force: bool,
-) -> ExtractionResult | None:
-    try:
-        from yt_dlp import YoutubeDL
-    except ImportError:
-        print("  yt-dlp is not installed")
-        return None
-
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "noplaylist": True,
-        "socket_timeout": 30,
-    }
-    if cookies:
-        opts["cookiefile"] = cookies
-
+    probe_timeout: int,
+) -> tuple[ExtractionResult | None, dict[str, Any] | None]:
     print("  YouTube: probing yt-dlp captions...")
-    try:
-        with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-    except Exception as exc:
-        print(f"  yt-dlp metadata failed: {exc}")
-        return None
-
-    if "entries" in info and info["entries"]:
-        info = info["entries"][0]
-    media_id = info.get("id") or parse_youtube_id(url) or "youtube"
-    title = info.get("title") or media_id
+    payload = run_ytdlp_caption_probe(url, preferred_langs, cookies, probe_timeout)
+    if not payload.get("ok"):
+        return None, payload
+    media_id = payload.get("media_id") or parse_youtube_id(url) or "youtube"
+    title = payload.get("title") or media_id
     if not force:
         existing = existing_bundle_result(output_dir, "youtube", media_id, title, url)
         if existing:
             print("  YouTube: existing output found, skipping")
-            return existing
-    chosen = choose_ytdlp_subtitle(info, preferred_langs)
-    if not chosen:
+            return existing, None
+    selected = payload.get("selected")
+    if not selected:
         print("  yt-dlp found no matching captions")
-        return None
-
-    lang, item, generated = chosen
-    ext = item.get("ext") or "vtt"
-    source = "yt-dlp:auto" if generated else "yt-dlp:manual"
+        return None, {
+            "reason_code": "youtube_no_matching_transcript",
+            "retryable": False,
+            "error": "yt-dlp found no matching captions",
+        }
+    lang = selected["lang"]
+    ext = selected["ext"]
+    source = "yt-dlp:auto" if selected["generated"] else "yt-dlp:manual"
     print(f"  YouTube: downloading {lang} captions via {source}")
     try:
-        caption = request_text(item["url"], headers={"Referer": url}, timeout=60)
+        caption = request_text(selected["url"], headers={"Referer": url}, timeout=60)
     except Exception as exc:
         print(f"  yt-dlp caption download failed: {exc}")
-        return None
-    return write_caption_bundle(
-        output_dir, "youtube", media_id, title, url, lang, source, caption, ext
+        reason_code, retryable = classify_youtube_failure(str(exc))
+        return None, {
+            "reason_code": reason_code,
+            "retryable": retryable,
+            "error": str(exc),
+        }
+    return (
+        write_caption_bundle(
+            output_dir, "youtube", media_id, title, url, lang, source, caption, ext
+        ),
+        None,
     )
 
 
@@ -450,15 +571,23 @@ def snippet_to_segment(snippet: Any) -> dict[str, Any]:
 
 def extract_youtube_transcript_api(
     url: str, output_dir: Path, preferred_langs: list[str]
-) -> ExtractionResult | None:
+) -> tuple[ExtractionResult | None, dict[str, Any] | None]:
     video_id = parse_youtube_id(url)
     if not video_id:
-        return None
+        return None, {
+            "reason_code": "youtube_invalid_url",
+            "retryable": False,
+            "error": "video id not found",
+        }
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError:
         print("  youtube-transcript-api is not installed")
-        return None
+        return None, {
+            "reason_code": "dependency_missing",
+            "retryable": False,
+            "error": "youtube-transcript-api is not installed",
+        }
 
     print("  YouTube: trying youtube-transcript-api fallback...")
     try:
@@ -468,29 +597,78 @@ def extract_youtube_transcript_api(
         fetched = transcript.fetch()
     except Exception as exc:
         print(f"  youtube-transcript-api failed: {exc}")
-        return None
+        diagnostic = f"{type(exc).__name__}: {exc}"
+        reason_code, retryable = classify_youtube_failure(diagnostic)
+        return None, {
+            "reason_code": reason_code,
+            "retryable": retryable,
+            "error": diagnostic[:500],
+        }
 
     segments = [snippet_to_segment(item) for item in fetched]
     title = f"YouTube {video_id}"
     lang = getattr(transcript, "language_code", "") or preferred_langs[0]
     source = "youtube-transcript-api:auto" if transcript.is_generated else "youtube-transcript-api:manual"
-    return write_segments_bundle(
-        output_dir, "youtube", video_id, title, url, lang, source, segments
+    return (
+        write_segments_bundle(
+            output_dir, "youtube", video_id, title, url, lang, source, segments
+        ),
+        None,
     )
 
 
 def extract_youtube(url: str, output_dir: Path, args: argparse.Namespace) -> ExtractionResult:
     preferred = split_langs(args.lang)
-    result = extract_youtube_ytdlp(url, output_dir, preferred, args.cookies, args.force)
+    diagnostics: list[dict[str, Any]] = []
+    result, diagnostic = extract_youtube_ytdlp(
+        url,
+        output_dir,
+        preferred,
+        args.cookies,
+        args.force,
+        args.youtube_probe_timeout,
+    )
     if result:
         return result
-    result = extract_youtube_transcript_api(url, output_dir, preferred)
+    if diagnostic:
+        diagnostics.append(diagnostic)
+    result, diagnostic = extract_youtube_transcript_api(url, output_dir, preferred)
     if result:
         return result
+    if diagnostic:
+        diagnostics.append(diagnostic)
+    asr_configured = asr_ready(args) is not None
     result = transcribe_ytdlp_audio(url, output_dir, "youtube", parse_youtube_id(url), "", args)
     if result:
         return result
-    return ExtractionResult(False, "youtube", message="no subtitles found and ASR is not available")
+    retryable_diagnostics = [item for item in diagnostics if item.get("retryable")]
+    if retryable_diagnostics:
+        chosen = retryable_diagnostics[0]
+        return ExtractionResult(
+            False,
+            "youtube",
+            media_id=parse_youtube_id(url) or "",
+            message=chosen.get("error", "temporary YouTube subtitle failure"),
+            reason_code=chosen.get("reason_code", "youtube_transient_failure"),
+            retryable=True,
+        )
+    if asr_configured:
+        return ExtractionResult(
+            False,
+            "youtube",
+            media_id=parse_youtube_id(url) or "",
+            message="audio transcription failed",
+            reason_code="asr_failed",
+            retryable=True,
+        )
+    return ExtractionResult(
+        False,
+        "youtube",
+        media_id=parse_youtube_id(url) or "",
+        message="no public subtitle track; audio transcription is required",
+        reason_code="needs_asr",
+        retryable=False,
+    )
 
 
 def resolve_bilibili_url(url: str) -> str:
@@ -764,7 +942,13 @@ def extract_xiaoyuzhou(url: str, output_dir: Path, args: argparse.Namespace) -> 
     try:
         episode = fetch_xiaoyuzhou_episode(url)
     except Exception as exc:
-        return ExtractionResult(False, "xiaoyuzhou", message=str(exc))
+        return ExtractionResult(
+            False,
+            "xiaoyuzhou",
+            message=str(exc),
+            reason_code="xiaoyuzhou_fetch_failed",
+            retryable=True,
+        )
 
     eid = episode.get("eid") or "xiaoyuzhou"
     title = episode.get("title") or eid
@@ -774,25 +958,49 @@ def extract_xiaoyuzhou(url: str, output_dir: Path, args: argparse.Namespace) -> 
         if existing:
             print("  Xiaoyuzhou: existing output found, skipping")
             return existing
-    result = try_xiaoyuzhou_official_transcript(url, output_dir, episode, args)
-    if result:
-        return result
+    if args.try_xiaoyuzhou_official_transcript:
+        result = try_xiaoyuzhou_official_transcript(url, output_dir, episode, args)
+        if result:
+            return result
+    else:
+        print("  Xiaoyuzhou: using public episode audio + ASR")
 
     audio_url = (
         ((episode.get("enclosure") or {}).get("url"))
         or (((episode.get("media") or {}).get("source") or {}).get("url"))
     )
     if not audio_url:
-        return ExtractionResult(False, "xiaoyuzhou", title=title, media_id=eid, message="audio URL not found")
+        return ExtractionResult(
+            False,
+            "xiaoyuzhou",
+            title=title,
+            media_id=eid,
+            message="audio URL not found",
+            reason_code="xiaoyuzhou_audio_missing",
+            retryable=False,
+        )
+    asr_configured = asr_ready(args) is not None
     result = transcribe_direct_audio(audio_url, output_dir, "xiaoyuzhou", eid, title, url, args)
     if result:
         return result
+    if asr_configured:
+        return ExtractionResult(
+            False,
+            "xiaoyuzhou",
+            title=title,
+            media_id=eid,
+            message="audio transcription failed",
+            reason_code="asr_failed",
+            retryable=True,
+        )
     return ExtractionResult(
         False,
         "xiaoyuzhou",
         title=title,
         media_id=eid,
-        message="official transcript unavailable and ASR is not configured",
+        message="public episode audio found but ASR is not configured",
+        reason_code="needs_asr",
+        retryable=False,
     )
 
 
@@ -845,6 +1053,8 @@ def transcribe_wav(
         str(wav_path),
         "-l",
         args.whisper_lang,
+        "-t",
+        str(args.whisper_threads),
         "-otxt",
         "-osrt",
         "-of",
@@ -1018,6 +1228,38 @@ def load_urls(args: argparse.Namespace) -> list[str]:
     raise ValueError("provide URL or --batch")
 
 
+def resolve_result_path(value: str | None, output_dir: Path, default_name: str) -> Path:
+    return Path(value) if value else output_dir / default_name
+
+
+def write_extraction_outputs(
+    urls: list[str],
+    results: list[ExtractionResult],
+    output_dir: Path,
+    results_json: str | None = None,
+    retry_urls: str | None = None,
+    asr_urls: str | None = None,
+) -> tuple[Path, Path, Path]:
+    result_path = resolve_result_path(results_json, output_dir, "extraction_results.json")
+    retry_path = resolve_result_path(retry_urls, output_dir, "retry_urls.txt")
+    asr_path = resolve_result_path(asr_urls, output_dir, "asr_urls.txt")
+    records = [{"url": url, **asdict(result)} for url, result in zip(urls, results)]
+    retry_items = [
+        url for url, result in zip(urls, results) if not result.ok and result.retryable
+    ]
+    asr_items = [
+        url
+        for url, result in zip(urls, results)
+        if not result.ok and result.reason_code in {"needs_asr", "asr_failed"}
+    ]
+    for path in (result_path, retry_path, asr_path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    write_text(result_path, json.dumps(records, ensure_ascii=False, indent=2) + "\n")
+    write_text(retry_path, "".join(f"{url}\n" for url in retry_items))
+    write_text(asr_path, "".join(f"{url}\n" for url in asr_items))
+    return result_path, retry_path, asr_path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Extract subtitles from YouTube, Bilibili and Xiaoyuzhou."
@@ -1029,14 +1271,45 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cookies", help="Netscape cookies file for yt-dlp")
     parser.add_argument("--bilibili-cookie", help="raw Bilibili Cookie header")
     parser.add_argument("--xiaoyuzhou-access-token", help="x-jike-access-token value")
+    parser.add_argument(
+        "--try-xiaoyuzhou-official-transcript",
+        action="store_true",
+        help="opt in to the authenticated transcript API before the default public-audio ASR path",
+    )
     parser.add_argument("--force", action="store_true", help="overwrite existing outputs")
     parser.add_argument("--no-asr", action="store_true", help="disable audio transcription fallback")
     parser.add_argument("--ffmpeg-bin", default=os.getenv("FFMPEG_BIN", "ffmpeg"))
-    parser.add_argument("--whisper-bin", default=os.getenv("WHISPER_BIN", "whisper.cpp/build/bin/whisper-cli"))
-    parser.add_argument("--whisper-model", default=os.getenv("WHISPER_MODEL", "whisper.cpp/models/ggml-small.bin"))
+    bundled_whisper = Path("whisper-bin-x64/Release/whisper-cli.exe")
+    bundled_model = Path("whisper-bin-x64/models/ggml-small-q5_1.bin")
+    parser.add_argument(
+        "--whisper-bin",
+        default=os.getenv("WHISPER_BIN")
+        or (str(bundled_whisper) if bundled_whisper.exists() else "whisper.cpp/build/bin/whisper-cli"),
+    )
+    parser.add_argument(
+        "--whisper-model",
+        default=os.getenv("WHISPER_MODEL")
+        or (str(bundled_model) if bundled_model.exists() else "whisper.cpp/models/ggml-small.bin"),
+    )
     parser.add_argument("--whisper-lang", default=os.getenv("WHISPER_LANG", "auto"))
+    parser.add_argument(
+        "--whisper-threads",
+        type=int,
+        default=max(1, min(8, os.cpu_count() or 4)),
+        help="CPU threads used by whisper.cpp (default: up to 8)",
+    )
     parser.add_argument("--download-timeout", type=int, default=1800)
     parser.add_argument("--asr-timeout", type=int, default=7200)
+    parser.add_argument("--youtube-probe-timeout", type=int, default=90)
+    parser.add_argument("--youtube-sleep", type=float, default=1.0)
+    parser.add_argument("--results-json", help="write per-URL extraction status JSON")
+    parser.add_argument("--retry-urls", help="write retryable failures, one URL per line")
+    parser.add_argument("--asr-urls", help="write URLs requiring/retrying ASR")
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="return success when some URLs fail after writing failure queues",
+    )
     return parser
 
 
@@ -1062,12 +1335,28 @@ def main() -> int:
             if result.text_path:
                 print(f"  text: {result.text_path}")
         else:
-            print(f"  FAILED: {result.message}")
+            print(
+                f"  FAILED [{result.reason_code or 'unknown'}; "
+                f"retryable={result.retryable}]: {result.message}"
+            )
+        if detect_platform(url) == "youtube" and args.youtube_sleep > 0:
+            time.sleep(args.youtube_sleep)
 
     ok = sum(1 for item in results if item.ok)
+    result_path, retry_path, asr_path = write_extraction_outputs(
+        urls,
+        results,
+        output_dir,
+        args.results_json,
+        args.retry_urls,
+        args.asr_urls,
+    )
     print(f"\n{'=' * 72}")
     print(f"Done: {ok}/{len(results)} succeeded")
-    return 0 if ok == len(results) else 1
+    print(f"Results: {result_path}")
+    print(f"Retry queue: {retry_path}")
+    print(f"ASR queue: {asr_path}")
+    return 0 if ok == len(results) or args.allow_partial else 1
 
 
 if __name__ == "__main__":

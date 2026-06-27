@@ -4,11 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       urls:
-        description: '手动指定 URL（可选，留空则用 config/urls.txt）'
+        description: "Optional URLs, one per line. Empty uses config/urls.txt."
         required: false
         type: string
-  schedule:
-    - cron: '0 8 * * *'  # 每天 UTC 8:00 (北京时间 16:00)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-subtitle-extraction
+  cancel-in-progress: false
 
 jobs:
   extract:
@@ -22,44 +27,31 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: pip
 
-      - name: Install system dependencies
+      - name: Install system and Python dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg cmake build-essential
-
-      - name: Install Python dependencies
-        run: pip install -r requirements.txt
-
-      - name: Setup yt-dlp
-        run: |
-          python -m yt_dlp --version
-          echo "yt-dlp ready"
+          pip install -r requirements.txt
 
       - name: Restore whisper.cpp build
         uses: actions/cache@v4
-        id: whisper-build-cache
         with:
-          path: |
-            whisper.cpp
+          path: whisper.cpp
           key: whisper-cpp-build-v3-${{ runner.os }}
 
-      - name: Clone whisper.cpp
+      - name: Build whisper.cpp if needed
         run: |
           if [ ! -d whisper.cpp/.git ]; then
             rm -rf whisper.cpp
             git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git whisper.cpp
           fi
-
-      - name: Build whisper.cpp if needed
-        run: |
           if [ ! -x whisper.cpp/build/bin/whisper-cli ]; then
             cmake -S whisper.cpp -B whisper.cpp/build -DWHISPER_BUILD_TESTS=OFF
             cmake --build whisper.cpp/build --config Release -j 2
           fi
-          whisper.cpp/build/bin/whisper-cli --help | head -20
 
       - name: Cache whisper.cpp model
         uses: actions/cache@v4
@@ -75,27 +67,23 @@ jobs:
           curl -L -o whisper.cpp/models/ggml-small.bin \
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
 
-      - name: Prepare optional cookies
+      - name: Prepare optional yt-dlp cookies
         run: |
           if [ -n "${{ secrets.YTDLP_COOKIES_B64 }}" ]; then
             echo "${{ secrets.YTDLP_COOKIES_B64 }}" | base64 -d > cookies.txt
             chmod 600 cookies.txt
-            echo "yt-dlp cookies configured"
           fi
 
       - name: Prepare URLs
-        id: urls
+        env:
+          INPUT_URLS: ${{ github.event.inputs.urls }}
         run: |
-          if [ -n "${{ github.event.inputs.urls }}" ]; then
-            echo "${{ github.event.inputs.urls }}" > config/urls.txt
-            echo "使用手动指定的 URL"
+          if [ -n "$INPUT_URLS" ]; then
+            printf '%s\n' "$INPUT_URLS" > config/urls.txt
           fi
-          echo "url_count=$(grep -cve '^\s*$' config/urls.txt || echo 0)" >> $GITHUB_OUTPUT
-          cat config/urls.txt
 
       - name: Extract subtitles
         env:
-          XIAOYUZHOU_ACCESS_TOKEN: ${{ secrets.XIAOYUZHOU_ACCESS_TOKEN }}
           BILIBILI_COOKIE: ${{ secrets.BILIBILI_COOKIE }}
         run: |
           COOKIES_ARG=""
@@ -108,19 +96,17 @@ jobs:
             --lang zh-Hans,zh-CN,zh,en \
             --whisper-bin whisper.cpp/build/bin/whisper-cli \
             --whisper-model whisper.cpp/models/ggml-small.bin \
+            --youtube-probe-timeout 90 \
+            --youtube-sleep 5 \
+            --results-json subtitles/extraction_results.json \
+            --retry-urls subtitles/retry_urls.txt \
+            --asr-urls subtitles/asr_urls.txt \
+            --allow-partial \
             $COOKIES_ARG
 
-      - name: Commit results
-        if: success()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add subtitles/ -f
-          if git diff --cached --quiet; then
-            echo "没有新文件"
-            exit 0
-          fi
-
-          git commit -m "📝 更新字幕 $(date +'%Y-%m-%d')"
-          git push
+      - name: Upload subtitle artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: subtitle-extraction-${{ github.run_id }}
+          path: subtitles/

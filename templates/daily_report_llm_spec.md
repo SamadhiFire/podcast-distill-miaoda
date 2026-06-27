@@ -88,12 +88,12 @@ Do not use `## 1.` numbering. Do not use English-only titles. If the original ti
 
 ## Per-Item Required Structure
 
-Each item must follow this structure:
+Each item must follow this structure. **All field labels use `**粗体**` format, NOT `###` headings.**
 
 ```md
 ## （N）中文短标题
 
-**原始标题**：Original title ｜ **栏目**：Source name ｜ **平台**：YouTube/小宇宙 ｜ **更新**：YYYY-MM-DD HH:MM ｜ **分类**：中文分类 ｜ **推荐**：★★★★☆
+**原始标题**：Original title ｜ **栏目**：Source name ｜ **平台**：YouTube/小宇宙 ｜ **更新**：YYYY-MM-DD HH:MM ｜ **时长**：1时23分45秒 ｜ **分类**：中文分类 ｜ **推荐**：★★★★☆
 **链接**：https://...
 
 **嘉宾与机构**
@@ -110,6 +110,8 @@ Each item must follow this structure:
 ```
 
 Metadata should be one line, with the source link on a second line. Never include `处理状态`.
+
+**Important**: `**嘉宾与机构**`, `**一句话摘要**`, `**完整摘要**`, `**核心观点**`, `**关键内容**`, `**值得后续整理的问题**` are bold text labels, NOT headings. Never use `###` for these fields.
 
 ## Guest And Organization Rules
 
@@ -155,18 +157,22 @@ Rules:
 
 Under `**核心观点**`, list 3 to 7 numbered points.
 
+**CRITICAL**: Each point MUST be a numbered list item starting with `1. `, `2. `, etc. NEVER use bare paragraphs without numbers. In Feishu, bare paragraphs are visually indistinguishable from the full summary above them.
+
 Each point should be a real claim, not a topic label.
 
 Good:
 
 ```md
 1. 旧 benchmark 会被模型快速刷穿，因此评测必须更接近真实任务。
+2. 评测滞后于模型发展是结构性问题，而非暂时现象。
 ```
 
 Bad:
 
 ```md
-1. Benchmark。
+旧 benchmark 会被模型快速刷穿，因此评测必须更接近真实任务。
+评测滞后于模型发展是结构性问题。
 ```
 
 ## Key Content Rules
@@ -217,7 +223,44 @@ Only include fields that have meaningful content. It is acceptable to omit irrel
 
 If the transcript contains important numbers, dates, amounts, percentages, counts, or rankings, include them under `关键数据` or `关键时间线/数据`.
 
-If the transcript contains memorable lines, include only short Chinese paraphrases or short quotes under `关键金句`.
+If the transcript contains memorable lines, include only short Chinese paraphrases or short quotes under `关键金句`. Each key quote MUST be wrapped in `> ` blockquote syntax, NOT as a plain list item.
+
+Example:
+
+```md
+- **关键金句**：
+
+> 当 benchmark 成为目标时，它就不再是好的 benchmark
+```
+
+## Data Table Rules
+
+When `关键数据` or `关键时间线/数据` contains 3 or more numeric values, use a markdown table instead of a list:
+
+```md
+- **关键数据**：
+
+| 指标 | 数值 |
+|------|------|
+| 霍尔木兹海峡日均通过量 | 2000万桶 |
+| 净损失 | 1300万桶/日 |
+| 中国进口下降 | 500万桶/日 |
+```
+
+For 1-2 values, a list is acceptable.
+
+## Entry Divider Rules
+
+After `**值得后续整理的问题**`, every entry MUST end with a `---` divider line. This creates a clear visual boundary between entries in Feishu.
+
+```md
+**值得后续整理的问题**
+
+- 问题1
+- 问题2
+
+---
+```
 
 ## Follow-Up Questions Rules
 
@@ -239,3 +282,78 @@ Questions should support later knowledge-base work, such as:
 - Use blockquotes only for truly important short quotes.
 - Do not invent guests, companies, data, or quotes.
 - If information is missing, say it is not clearly mentioned.
+
+## Complete Example (One Item)
+
+Below is a complete example of a single item. Follow this exact structure, heading levels, and spacing:
+
+```markdown
+## （1）OpenAI 为何放弃传统 Benchmark
+
+**原始标题**：Why Traditional Benchmarks Fail Modern AI Models with OpenAI Research Lead ｜ **栏目**：The Gradient ｜ **平台**：YouTube ｜ **更新**：2024-06-15 08:30 ｜ **时长**：36分19秒 ｜ **分类**：科技 / AI / VC ｜ **推荐**：★★★★★
+**链接**：https://www.youtube.com/watch?v=AZrU6y3pUcU
+
+**嘉宾与机构**
+
+- OpenAI 研究负责人（未公开具体姓名）：OpenAI，评测与对齐团队
+- 主持人：The Gradient 播客
+
+**一句话摘要**
+
+OpenAI 研究负责人系统阐述了传统 NLP benchmark 被大模型快速刷穿的原因，并提出未来评测必须转向真实任务评估与动态对抗测试。
+
+**完整摘要**
+
+节目围绕 AI 模型评测危机展开深度讨论。嘉宾指出，传统静态 benchmark（如 GLUE、SuperGLUE）在 GPT-4 时代已失去区分度，模型通过规模化和训练数据覆盖即可达到人类水平，这种"刷榜"行为掩盖了模型在真实场景中的脆弱性。
+
+嘉宾回顾了评测方法的三次演变：从早期任务-specific 的指标，到通用语言理解 benchmark，再到当前以人类偏好对齐为核心的评估范式。他强调，每一次评测升级都伴随着模型能力的跃迁，但评测本身始终滞后于模型发展。
+
+针对解决方案，嘉宾提出两个核心方向。第一是"真实任务评估"，即让模型在实际工作流中接受测试，而非在标准化数据集上比拼分数。第二是"动态对抗测试"，通过持续生成新难度样本，迫使模型展现真正的推理能力而非记忆能力。
+
+讨论还涉及评测商业化的伦理问题。嘉宾警告，如果评测标准被少数机构垄断，可能导致研究方向的人为扭曲，因此倡导开源社区参与评测标准的制定与更新。
+
+**核心观点**
+
+1. 静态 benchmark 的生命周期正在缩短，GPT-4 级别的模型可以在数月内刷穿原本设计给人类专家的测试集。
+2. 评测滞后于模型发展是结构性问题，而非暂时现象，需要从根本上改变评测范式。
+3. 真实任务评估比标准化分数更能反映模型的实际效用，但实施成本更高、更难规模化。
+4. 动态对抗测试可以有效区分"记忆"与"推理"，但需要持续投入且存在被逆向工程的风险。
+5. 评测标准的制定权不应集中在少数机构手中，开源参与是防止方向扭曲的关键。
+
+**关键内容**
+
+- **关键概念**：静态 benchmark、动态对抗测试、真实任务评估、人类偏好对齐、刷榜（benchmark saturation）
+- **技术判断**：传统 benchmark 已无法有效区分前沿模型；未来 2-3 年内评测行业将经历范式转移
+- **产品/研究启发**：企业在选型大模型时应设计自己的真实任务测试集，而非依赖公开 leaderboard
+- **关键数据**：GLUE 基准从 2018 年提出到被刷穿约 4 年；SuperGLUE 仅维持约 2 年有效区分度
+- **关键金句**：
+
+> 当评测成为目标时，它就不再是好的评测
+
+**值得后续整理的问题**
+
+- 动态对抗测试的具体实现机制是什么？有哪些已有框架可以参考？
+- 国内企业如何建立适合自己的真实任务评估体系？
+- 评测标准开源化是否会带来新的安全和滥用风险？
+
+---
+```
+
+## Common Mistakes to Avoid
+
+When generating the report, NEVER do the following:
+
+1. **Do not skip required fields.** Every item must have: 嘉宾与机构, 一句话摘要, 完整摘要, 核心观点, 关键内容, 值得后续整理的问题.
+2. **Do not use English-only headings.** All headings must be in Chinese.
+3. **Do not output the document title or category headings inside a single item.** A single item starts with `## （N）中文短标题` and ends after 值得后续整理的问题.
+4. **Do not rank by view count or likes** in the "最值得关注" section.
+5. **Do not invent information.** If a guest's name is unclear, say so. If no data is mentioned, omit the data field.
+6. **Do not use tables** in the overview section. Tables are only allowed in `关键数据` when there are 3+ numeric values.
+7. **Do not wrap the entire output in a code block.** Output raw Markdown.
+8. **Do not use `###` for field labels.** Guest, summary, viewpoints, key content, and follow-up questions are bold text (`**嘉宾与机构**`), NOT third-level headings (`### 嘉宾与机构`).
+9. **Do not use bare paragraphs for core viewpoints.** Every viewpoint MUST be a numbered list item (`1. `, `2. `, etc.).
+10. **Do not use bare paragraphs for most-noteworthy.** Every item in "本日最值得关注的内容" MUST be numbered (`1. **title**`, `2. **title**`, etc.).
+11. **Do not forget the `---` divider at the end of each entry.** Every entry must end with `---` after 值得后续整理的问题.
+12. **Do not skip `> ` blockquote for key quotes.** Every key quote under `关键金句` must use `> ` blockquote syntax.
+13. **Do not skip table format for 3+ data points.** Use `| 指标 | 数值 |` table format when 关键数据 has 3 or more values.
+14. **Do not write bare `$` signs.** Always write `\$` for literal dollar signs (e.g., `\$200`).

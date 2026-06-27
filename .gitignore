@@ -5,25 +5,46 @@ __pycache__/
 .venv/
 .env
 credentials.cmd
+client_secret_*.json
+token*.json
+*.b64
 
 # 临时文件
 test_results/
 test_tools/
 *.tmp
 *.part
+*.ytdl
+*.log
 cookies.txt
 cookies*.txt
+reports/
+subtitles/
 
-# 视频/音频文件（中间产物，最终字幕在 subtitles/ 下）
+# 配置/状态文件（运行时生成，不应提交）
+config/daily_urls.txt
+config/last_check.json
+config/youtube_channel_cache.json
+
+# 视频/音频/缩略图文件（中间产物，最终字幕在 subtitles/ 下）
 *.mp4
 *.mkv
 *.webm
 *.m4a
 *.mp3
 *.wav
+*.flac
+*.ogg
+*.webp
+*.jpg
+*.jpeg
+*.png
 
-# whisper.cpp 编译产物（CI 上每次构建）
+# whisper.cpp 源码目录（CI 运行时自动 clone + 编译，不要提交整个源码）
 whisper.cpp/
+
+# Whisper 模型文件（超过 100MB，超出 GitHub 文件限制，使用 download-model.cmd 下载）
+whisper-bin-x64/models/*.bin
 
 # IDE
 .vscode/

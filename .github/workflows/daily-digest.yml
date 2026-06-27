@@ -13,11 +13,15 @@ on:
         default: false
         type: boolean
   schedule:
-    # 06:00 Beijing time (UTC+8 = previous day 22:00 UTC)
-    - cron: "0 22 * * *"
+    # 05:00 Beijing time (UTC 21:00 previous day)
+    - cron: "0 21 * * *"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: daily-podcast-digest
+  cancel-in-progress: false
 
 jobs:
   daily-digest:
@@ -102,16 +106,17 @@ jobs:
       - name: Collect daily updated items
         env:
           BILIBILI_COOKIE: ${{ secrets.BILIBILI_COOKIE }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
           python scripts/collect_daily_items.py \
-            --date "$REPORT_DATE" \
+            --date "${REPORT_DATE}T06:00" \
             --lookback-hours 24 \
+            --youtube-backend api \
             --output-json "$ITEMS_PATH" \
             --output-urls config/daily_urls.txt
 
       - name: Extract full subtitles for daily items
         env:
-          XIAOYUZHOU_ACCESS_TOKEN: ${{ secrets.XIAOYUZHOU_ACCESS_TOKEN }}
           BILIBILI_COOKIE: ${{ secrets.BILIBILI_COOKIE }}
         shell: bash
         run: |
@@ -125,6 +130,40 @@ jobs:
             --lang zh-Hans,zh-CN,zh,en \
             --whisper-bin whisper.cpp/build/bin/whisper-cli \
             --whisper-model whisper.cpp/models/ggml-small.bin \
+            --youtube-probe-timeout 90 \
+            --youtube-sleep 5 \
+            --results-json subtitles/extraction_results.json \
+            --retry-urls subtitles/retry_urls.txt \
+            --asr-urls subtitles/asr_urls.txt \
+            --allow-partial \
+            $COOKIES_ARG
+
+      - name: Retry transient subtitle failures once
+        shell: bash
+        run: |
+          if [ ! -s subtitles/retry_urls.txt ]; then
+            echo "No transient subtitle failures to retry"
+            exit 0
+          fi
+          cp subtitles/retry_urls.txt subtitles/retry_batch.txt
+          echo "Transient failures found; waiting 10 minutes before one retry"
+          sleep 600
+          COOKIES_ARG=""
+          if [ -f cookies.txt ]; then
+            COOKIES_ARG="--cookies cookies.txt"
+          fi
+          python extract_subtitles.py \
+            --batch subtitles/retry_batch.txt \
+            --output subtitles \
+            --lang zh-Hans,zh-CN,zh,en \
+            --whisper-bin whisper.cpp/build/bin/whisper-cli \
+            --whisper-model whisper.cpp/models/ggml-small.bin \
+            --youtube-probe-timeout 90 \
+            --youtube-sleep 10 \
+            --results-json subtitles/retry_extraction_results.json \
+            --retry-urls subtitles/retry_urls.txt \
+            --asr-urls subtitles/retry_asr_urls.txt \
+            --allow-partial \
             $COOKIES_ARG
 
       - name: Generate daily report from full transcripts
@@ -132,7 +171,7 @@ jobs:
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
-          LLM_TIMEOUT: "180"
+          LLM_TIMEOUT: "600"
           LLM_CHUNK_CHARS: "30000"
         run: |
           python scripts/generate_daily_report.py \
@@ -141,7 +180,11 @@ jobs:
             --subtitles-dir subtitles \
             --output "$REPORT_PATH"
 
-      - name: Publish report to Feishu Wiki and notify group
+      - name: Install lark-cli
+        shell: bash
+        run: npm install -g @larksuite/cli
+
+      - name: Publish to Feishu Wiki and notify group
         env:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
@@ -160,23 +203,13 @@ jobs:
             $DRY_RUN
 
       - name: Upload report artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: daily-digest-${{ steps.report_date.outputs.date }}
           path: |
             ${{ env.REPORT_PATH }}
             ${{ env.ITEMS_PATH }}
+            reports/daily_items_${{ steps.report_date.outputs.date }}.manifest.json
             config/daily_urls.txt
-
-      - name: Commit generated files
-        if: success()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add reports/ subtitles/ config/daily_urls.txt -f
-          if git diff --cached --quiet; then
-            echo "No generated changes to commit"
-            exit 0
-          fi
-          git commit -m "Update daily podcast digest ${REPORT_DATE}"
-          git push
+            subtitles/
