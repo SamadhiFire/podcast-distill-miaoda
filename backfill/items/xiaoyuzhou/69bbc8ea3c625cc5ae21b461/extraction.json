@@ -2,13 +2,13 @@
   "status": "needs_asr",
   "method": "",
   "language": "",
-  "attempts": 1,
+  "attempts": 2,
   "duration_seconds": 4483,
   "last_timestamp_seconds": null,
   "coverage_ratio": null,
   "text_chars": null,
   "sha256": null,
-  "completed_at": "2026-06-29T14:31:57.932726",
-  "error_type": "needs_asr",
-  "error_message": "no transcript available, ASR not configured"
+  "completed_at": "2026-06-29T18:50:39.627304",
+  "error_type": "no_audio_url",
+  "error_message": "could not find audio URL from episode page"
 }

@@ -1,14 +1,14 @@
 {
-  "status": "retryable",
+  "status": "needs_asr",
   "method": "",
   "language": "",
-  "attempts": 1,
+  "attempts": 2,
   "duration_seconds": 5925,
   "last_timestamp_seconds": null,
   "coverage_ratio": null,
   "text_chars": null,
   "sha256": null,
-  "completed_at": "2026-06-29T18:32:04.832999",
-  "error_type": "no_srt_output",
-  "error_message": "whisper.cpp completed but no SRT found"
+  "completed_at": "2026-06-29T18:49:29.815298",
+  "error_type": "no_audio_url",
+  "error_message": "could not find audio URL from episode page"
 }
