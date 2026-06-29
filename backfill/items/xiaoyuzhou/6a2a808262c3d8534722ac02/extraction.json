@@ -1,0 +1,14 @@
+{
+  "status": "needs_asr",
+  "method": "",
+  "language": "",
+  "attempts": 1,
+  "duration_seconds": 4246,
+  "last_timestamp_seconds": null,
+  "coverage_ratio": null,
+  "text_chars": null,
+  "sha256": null,
+  "completed_at": "2026-06-28T15:22:26.824065",
+  "error_type": "needs_asr",
+  "error_message": "no transcript available, ASR not configured"
+}
