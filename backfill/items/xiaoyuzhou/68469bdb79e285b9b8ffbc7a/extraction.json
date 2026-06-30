@@ -1,14 +1,14 @@
 {
-  "status": "needs_asr",
+  "status": "retryable",
   "method": "",
   "language": "",
-  "attempts": 1,
+  "attempts": 2,
   "duration_seconds": 1977,
   "last_timestamp_seconds": null,
   "coverage_ratio": null,
   "text_chars": null,
   "sha256": null,
-  "completed_at": "2026-06-29T18:47:26.728634",
-  "error_type": "no_audio_url",
-  "error_message": "could not find audio URL from episode page"
+  "completed_at": "2026-06-30T12:53:49.455864",
+  "error_type": "exception",
+  "error_message": "[WinError 32] 另一个程序正在使用此文件，进程无法访问。: 'D:\\\\Users\\\\AS\\\\Desktop\\\\podcast-distill\\\\backfill\\\\temp\\\\68469bdb79e285b9b8ffbc7a.m4a'"
 }

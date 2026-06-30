@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "item_id": "youtube:0sW8KrudZ1o",
+  "metadata": {
+    "item_id": "youtube:0sW8KrudZ1o",
+    "platform": "youtube",
+    "platform_id": "0sW8KrudZ1o",
+    "source_id": "yt_bloomberg_china",
+    "source_name": "Bloomberg The China Show",
+    "category": "商业 / 财经 / 投资",
+    "title": "US, China Step Up Trade War Rhetoric | The China Show 10/16/2025",
+    "url": "https://www.youtube.com/watch?v=0sW8KrudZ1o",
+    "published_at": "2025-10-16T06:18:09+00:00",
+    "report_date": "2025-10-17",
+    "duration_seconds": 5647,
+    "language": "en"
+  },
+  "generation": {
+    "script": "trae_agent",
+    "model": "trae_agent",
+    "quality": "trae_agent_validated"
+  },
+  "digest": {
+    "short_title": "中美贸易战升级与市场影响",
+    "one_liner": "中美贸易紧张局势再度升级，特朗普宣称已进入贸易战，中国官媒则呼吁做好持久战准备。",
+    "why_it_matters": "中美贸易摩擦走向将直接影响全球供应链、半导体产业和资本市场，TSMC财报和APEC峰会前的双方博弈尤为关键。",
+    "summary": "中美贸易战升级，特朗普明确表示"你已经处于贸易战中"，并称100%关税是必要的防御手段；与此同时，财长贝森特暗示可能延长高关税暂停期，为11月APEC期间可能的习特会晤留下

@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "item_id": "youtube:eQFubNakL4k",
+  "platform": "youtube",
+  "platform_id": "eQFubNakL4k",
+  "transcript_sha256": "6928c259b33b901f9c23974dff3918b9d6841f8a5aa104b82bee5817a579546d",
+  "metadata": {
+    "item_id": "youtube:eQFubNakL4k",
+    "platform": "youtube",
+    "platform_id": "eQFubNakL4k",
+    "source_id": "yt_the_daily",
+    "source_name": "The Daily",
+    "category": "新闻 / 时评 / 全球议题",
+    "title": "The Battle Over A.I. in the Classroom",
+    "url": "https://www.youtube.com/watch?v=eQFubNakL4k",
+    "published_at": "2026-06-19T14:27:03+00:00",
+    "report_date": "2026-06-20",
+    "duration_seconds": 1912,
+    "language": "en"
+  },
+  "generation": {
+    "script": "trae_agent",
+    "model": "trae_agent",
+    "quality": "trae_agent_validated"
+  },
+  "digest": {
+    "short_title": "AI进课堂之争",
+    "one_liner": "AI进入美国课堂引发家长强烈反对，科技巨头加速渗透，而一线师生正探索第三条道路",
+    "why_it_matters": "涉及AI对青少年批判性思维的潜在危害、科技巨头对教育系统的渗透，以及草根教师在两者之间开辟的新路径",
+    "summary": [
+      "美国课堂正在经历一场关于AI的激烈争论。纽约时报记者Natasha Singer指出，家长的强烈反弹前所未有：学生利用ChatGPT和Gemini在课堂上作弊，布鲁金斯学会的报告警告生成式AI在教育中的风险远超收益。与此同时，白宫发布行政令推动AI教育，谷歌、微软、OpenAI等科技巨头纷纷承诺投入巨资将AI工具带入学校。",
+      "各学区反应截然不同。迈阿密-戴德县学区用一年时间测试工具、培训教师，谨慎地向10万余名高中生推出Google Gemini。而洛杉矶联合学区则仓促签约一家初创公司推出AI聊天机器人Ed，结果创始人被控欺诈投资者，公司破产，成为警示案例。洛杉矶家长随即发起名为把大科技赶出学生课桌的请愿，获得超过千人签名。",
+      "在新泽西纽瓦克的北星学院，AP美国历史教师Scott Kern开辟了一条中间道路。他创建了一门名为AI驾驶员教育的选修课，教导16名12年级学生主动驾驭技术而非被动被技术驱使。学生进行24小时AI使用审计，区分自己是AI的驾驶员还是乘客。课程最终产出是一份关于AI技术的独立宣言，学生们宣布反对放弃自主权。"
+    ],
+    "core_points": [
+      "布鲁金斯学会报告警告生成式AI对儿童教育的风险远超收益，引发家长强烈反弹",
+      "洛杉矶学区因仓促采购AI聊天机器人导致创业公司破产，成为反面教材；迈阿密谨慎推进则提供正面范例",
+      "技术公司推动AI教育的背后是培养下一代消费者——二年级学生一旦习惯某个工具就可能成为终身客户",
+      "新泽西教师Scott Kern创建AI驾驶员教育课程，引导学生主动控制技术而非被动受害",
+      "学生们最终宣言称AI应是人类潜能的延伸，而非思维的替代品"
+    ],
+    "key_facts": [
+      {"label": "迈阿密高中生覆盖", "value": "100,000+", "context": "迈阿密-戴德公立学区向10万余名高中生推出Google Gemini聊天机器人", "source_refs": []},
+      {"label": "洛杉矶请愿签名", "value": "more than 1,000", "context": "洛杉矶家长发起请愿要求审查学区科技合同，超过千人签名", "source_refs": []},
+      {"label": "AI课程注册学生", "value": "16", "context": "首批AI驾驶员教育课程有16名12年级学生选修", "source_refs": []}
+    ],
+    "takeaways": [
+      "AI教育的关键不是教学生如何使用工具，而是教他们质疑技术对自主性的影响"
+    ],
+    "guests": [
+      "Natasha Singer, The New York Times, Reporter",
+      "Scott Kern, North Star Academy, AP US History Teacher"
+    ],
+    "topics": ["AI教育", "技术伦理", "批判性思维"],
+    "tensions": ["科技公司商业利益与学生教育安全的冲突", "全国统一AI教育政策缺位与各学区自行探索的矛盾"],
+    "quote": {"text": "Students are not buying the idea that an AI-driven future is inevitable.", "speaker": "Natasha Singer", "kind": "verbatim"},
+    "importance_score": 4,
+    "content_density": "high",
+    "quality": "trae_agent_validated"
+  }
+}

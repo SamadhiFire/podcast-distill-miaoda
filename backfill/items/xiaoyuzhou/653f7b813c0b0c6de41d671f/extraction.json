@@ -1,14 +1,14 @@
 {
-  "status": "needs_asr",
-  "method": "",
-  "language": "",
-  "attempts": 1,
+  "status": "success",
+  "method": "whisper_cpp",
+  "language": "zh",
+  "attempts": 2,
   "duration_seconds": 2242,
   "last_timestamp_seconds": null,
-  "coverage_ratio": null,
-  "text_chars": null,
-  "sha256": null,
-  "completed_at": "2026-06-29T18:46:21.046628",
-  "error_type": "no_audio_url",
-  "error_message": "could not find audio URL from episode page"
+  "coverage_ratio": 0.95,
+  "text_chars": 12289,
+  "sha256": "1d91d8d0d76e980aa50c5c5b4a762d78cba69fa2d6afa32380bebba876832495",
+  "completed_at": "2026-06-30T10:39:11.002555",
+  "error_type": null,
+  "error_message": null
 }

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "item_id": "youtube:iqAGth0lTV8",
+  "platform": "youtube",
+  "platform_id": "iqAGth0lTV8",
+  "transcript_sha256": "6dc1e830508863495c21f5d9344a5bfd39d09745b9a058677d0b10843447abd6",
+  "metadata": {
+    "item_id": "youtube:iqAGth0lTV8",
+    "platform": "youtube",
+    "platform_id": "iqAGth0lTV8",
+    "source_id": "yt_the_daily",
+    "source_name": "The Daily",
+    "category": "新闻 / 时评 / 全球议题",
+    "title": "Why the Ebola Outbreak Has Been Nearly Impossible to Stop",
+    "url": "https://www.youtube.com/watch?v=iqAGth0lTV8",
+    "published_at": "2026-06-03T14:24:35+00:00",
+    "report_date": "2026-06-04",
+    "duration_seconds": 1833,
+    "language": "en"
+  },
+  "generation": {
+    "script": "trae_agent",
+    "model": "trae_agent",
+    "quality": "trae_agent_validated"
+  },
+  "digest": {
+    "short_title": "刚果埃博拉疫情失控",
+    "one_liner": "刚果民主共和国正经历史上第三大埃博拉疫情，医疗资源匮乏和社区不信任导致难以控制",
+    "why_it_matters": "罕见的Bundibugyo毒株、检测滞后、美国外援削减和社区抵抗叠加，使此次疫情具备成为史上最严重埃博拉疫情的潜力",
+    "summary": [
+      "刚果东北部正面临棘手的埃博拉疫情。这是Bundibugyo毒株引发的仅第三次暴发，尚无疫苗和治疗手段。疫情可能在被发现前已传播两到三个月，目前约250人死亡、超过1100例疑似病例，已是有记录以来第三大埃博拉疫情。专家警告可能成为最大规模的一次。",
+      "疫情始于金矿城镇Mongbwalu，记者实地探访发现医院条件极为恶劣。5岁男孩Emmanuel躺在床上用纸巾堵住流血不止的鼻子，几米外是刚去世的21岁女性尸体。医生穿着不足的防护装备，家属仅凭简陋防护进出病房。当地医生愤怒质问：暴发12天了，难道这就是我们能做到的最好程度？",
+      "多重因素叠加导致响应迟缓：Bundibugyo是极罕见毒株，当地最初只能检测更常见的Zaire毒株；当地症状与疟疾和伤寒相似，患者延误就医；金矿城镇流动人口密集加速传播；美国对外援助的削减使早期检测网络瘫痪。更棘手的是社区对医疗人员的深度不信任，甚至有暴徒围攻医院试图抢夺尸体。",
+      "在Mbandaka，一位有影响力的天主教牧师的追随者为夺取尸体而武力冲击医院，与警察发生数小时的枪战冲突。社区普遍认为外国援助机构在传播病毒，抵制安全丧葬措施。尽管5岁的Emmanuel已康复出院带来一线希望，但密接追踪尚未真正开展，疫情控制前景仍充满不确定性。"
+    ],
+    "core_points": [
+      "Bundibugyo是极为罕见的埃博拉毒株，这是历史上仅第三次暴发，尚无疫苗和特效治疗",
+      "疫情在被发现前可能已传播两到三个月，超过1100例疑似病例，250人死亡",
+      "美国对外援助削减导致早期检测网络缺失，本可更早发现的疫情被拖延数月",
+      "医院极度缺乏防护装备和检测试剂，检测结果需要4到6天，患者往往在结果出来前已死亡",
+      "社区存在严重不信任，居民将医院视为死亡之地，出现围攻医院抢夺尸体的暴力事件"
+    ],
+    "key_facts": [
+      {"label": "确诊病例死亡人数", "value": "约250人", "context": "截至目前约250人确认死于此次埃博拉疫情", "source_refs": []},
+      {"label": "疑似病例数量", "value": "超过1100例", "context": "约有1100例疑似埃博拉病例，真实数字可能远超此数", "source_refs": []},
+      {"label": "疫情潜伏时间", "value": "2到3个月", "context": "病毒在被正式发现前可能已传播了2到3个月", "source_refs": []},
+      {"label": "检测结果等待时间", "value": "4到6天", "context": "检测Bundibugyo毒株需要4到6天才能出结果", "source_refs": []},
+      {"label": "医院围攻时长", "value": "5小时", "context": "牧师追随者为抢夺尸体攻击医院，与警察的冲突持续了5小时", "source_refs": []},
+      {"label": "2014-2016年西非埃博拉死亡人数", "value": "11000人", "context": "参考历史，2014-2016年西非埃博拉疫情造成11000人死亡", "source_refs": []}
+    ],
+    "takeaways": [
+      "国际社会需紧急加强对刚果埃博拉疫情的资源投入和社区教育工作，否则疫情可能蔓延为全球健康危机"
+    ],
+    "guests": [
+      "Declan Walsh, The New York Times, Senior Correspondent for Africa"
+    ],
+    "topics": ["公共卫生", "埃博拉疫情", "全球健康"],
+    "tensions": [
+      "美国外援削减削弱了早期检测能力与当前急需国际援助之间的矛盾",
+      "社区对医疗体系的不信任与推动安全卫生措施的迫切需求"
+    ],
+    "quote": {"text": "We are 12 days into this outbreak. Is this the best we can do?", "speaker": "当地医生", "kind": "verbatim"},
+    "importance_score": 4,
+    "content_density": "high",
+    "quality": "trae_agent_validated"
+  }
+}

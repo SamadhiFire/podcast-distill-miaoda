@@ -1,14 +1,14 @@
 {
-  "status": "needs_asr",
+  "status": "retryable",
   "method": "",
   "language": "",
-  "attempts": 1,
+  "attempts": 3,
   "duration_seconds": 6564,
   "last_timestamp_seconds": null,
   "coverage_ratio": null,
   "text_chars": null,
   "sha256": null,
-  "completed_at": "2026-06-29T18:47:10.295979",
-  "error_type": "no_audio_url",
-  "error_message": "could not find audio URL from episode page"
+  "completed_at": "2026-06-30T12:49:41.744503",
+  "error_type": "ffmpeg_failed",
+  "error_message": "Command '['C:\\\\Users\\\\AS\\\\AppData\\\\Local\\\\Microsoft\\\\WinGet\\\\Packages\\\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\\\ffmpeg-8.1.1-full_build\\\\bin\\\\ffmpeg.exe', '-y', '-i', 'D:\\\\Users\\\\AS\\\\Desktop"
 }

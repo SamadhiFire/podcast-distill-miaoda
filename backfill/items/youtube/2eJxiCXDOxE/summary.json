@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "item_id": "youtube:2eJxiCXDOxE",
+  "platform": "youtube",
+  "platform_id": "2eJxiCXDOxE",
+  "transcript_sha256": "cf24e3b085a1c93ec49e98277571a3db67340d4646ff551b27f74e7699b7bab9",
+  "metadata": {
+    "item_id": "youtube:2eJxiCXDOxE",
+    "platform": "youtube",
+    "platform_id": "2eJxiCXDOxE",
+    "source_id": "yt_masters_in_business",
+    "source_name": "Masters in Business",
+    "category": "商业 / 财经 / 投资",
+    "title": "The Lawyer Who Argued Against Trump's Tariffs: Masters in Business Interview",
+    "url": "https://www.youtube.com/watch?v=2eJxiCXDOxE",
+    "published_at": "2025-09-20T09:00:04+00:00",
+    "report_date": "2025-09-21",
+    "duration_seconds": 2103,
+    "language": "en"
+  },
+  "generation": {
+    "script": "trae_agent",
+    "model": "trae_agent",
+    "quality": "trae_agent_validated"
+  },
+  "digest": {
+    "short_title": "关税案上诉胜利",
+    "one_liner": "前副检察长Neal Katyal以7-4赢得特朗普关税违宪案上诉，论证总统无权单方加征关税。",
+    "why_it_matters": "联邦上诉法院裁定特朗普关税违宪，为限制总统贸易权力确立了重要先例，直接影响美国贸易政策。",
+    "summary": [
+      "Neal Katyal详细解析了特朗普关税违宪上诉案。联邦上诉法院以7比4裁定关税行政行为违宪，核心论点是宪法第一条第八款明确规定关税权力属于国会，总统无权单方面行使。Katyal的策略是邀请多位顶级法律学者撰写法庭之友意见书，使法官意识到此案超越党派分歧。",
+      "Katyal引用了重大事项原则以及宪法三权分立的基本逻辑。他指出关税是税收的一种形式，而征税权明确归属国会，且是最古老、最核心的立法权。如果允许总统以国家安全名义绕过国会加征关税，等于允许总统不经国会批准施加税赋。",
+      "Katyal回顾了职业生涯轨迹：从关塔那摩囚犯律师，在最高法院赢得Boumediene v. Bush案，到奥巴马政府的代理副检察长，再到私营业界。他分享在最高法院辩论多次的独特经验，强调不同法官需要不同策略。",
+      "谈及Moore v. Harper案（独立州立法机构理论），Katyal称这是他职业生涯中最危险的案子——若最高法院接受该理论，州议会议员可在选举后无视结果单方面宣布胜利者。ChatGPT在论证阶段提供了有价值的类比帮助，但Katyal警告生成案例的风险。",
+      "Katyal警示若特朗普重新掌权，将更具报复性且更懂得利用体制；保守派最高法院的解除管制议程可能导致环境、金融、药品等关键领域监管被大幅削弱。"
+    ],
+    "core_points": [
+      "联邦上诉法院以多数票裁定特朗普关税违宪，关税权属于国会而非总统",
+      "宪法第一条第八款明确将关税权力列入国会专属职权，是最核心的立法权",
+      "重大事项原则适用于关税案，总统不能以国家安全名义越权征税",
+      "Katyal在关塔那摩案中为囚犯赢得最高法院诉讼，从辩护律师转型为政府律师",
+      "Moore v. Harper案若败诉将摧毁民主选举正当性",
+      "ChatGPT可辅助法律策略梳理，但不能用于生成实际判例引用",
+      "若特朗普重新掌权将更具报复性，保守派法院正推进大规模解除管制议程"
+    ],
+    "key_facts": [
+      {
+        "label": "上诉法院投票",
+        "value": "7",
+        "context": "联邦上诉法院以多数票裁定关税违宪，多数票包含共和党任命法官",
+        "source_refs": []
+      },
+      {
+        "label": "宪法条款",
+        "value": "8",
+        "context": "宪法第一条第八款是国会关税权力的法律依据",
+        "source_refs": []
+      },
+      {
+        "label": "关税税率",
+        "value": "500",
+        "context": "特朗普关税涉及高达500个百分点的税率，构成重大经济影响",
+        "source_refs": []
+      },
+      {
+        "label": "Moore案判决",
+        "value": "6",
+        "context": "Moore v. Harper案以多数票胜诉，推翻了独立州立法机构理论",
+        "source_refs": []
+      },
+      {
+        "label": "年接案量",
+        "value": "12",
+        "context": "Katyal每年承接的案件量约为12件重要上诉案",
+        "source_refs": []
+      }
+    ],
+    "takeaways": [
+      "总统单方面加征关税很可能违宪，国会才是关税权力的拥有者",
+      "在最高法院辩论需差异化策略：对自由派重历史，保守派重文本，首席大法官重制度后果"
+    ],
+    "guests": [
+      "Neal Katyal - 前美国代理副检察长、Hogan Lovells合伙人、乔治城大学法学教授",
+      "Barry Ritholtz - Masters in Business主持人"
+    ],
+    "topics": [
+      "宪法",
+      "关税",
+      "三权分立"
+    ],
+    "tensions": [
+      "总统关税权vs国会专属征税权：特朗普以国家安全为由加征关税，但宪法第一条第八款明确关税权属国会",
+      "关税是监管还是税收：特朗普阵营主张关税是外交监管手段，Katyal反驳关税本质是税收",
+      "AI在法律中的角色：Katyal承认ChatGPT对论证有帮助，但警告AI生成虚假案例可能导致律师被制裁"
+    ],
+    "quote": {
+      "text": "Tariffs are taxes, and the Constitution vests the power to tax in Congress.",
+      "speaker": "Neal Katyal",
+      "kind": "paraphrase"
+    },
+    "importance_score": 3,
+    "content_density": "high",
+    "quality": "trae_agent_validated"
+  }
+}

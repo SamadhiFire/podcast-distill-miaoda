@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-30T10:53:02Z",
+  "platform": "youtube",
+  "month": null,
+  "date": null,
+  "item_id": "youtube:f8xIxDc0THE",
+  "counts": {
+    "invalid": 1
+  },
+  "invalid_or_missing": [
+    {
+      "item_id": "youtube:f8xIxDc0THE",
+      "summary_path": "backfill/items/youtube/f8xIxDc0THE/summary.json",
+      "error": "key_facts_2_number_not_found_in_transcript:4"
+    }
+  ]
+}

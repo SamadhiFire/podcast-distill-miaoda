@@ -346,7 +346,7 @@ def try_asr_extraction(url, eid, item, output_dir):
         result = subprocess.run(
             [str(WHISPER_BIN), "-m", str(WHISPER_MODEL), "-f", str(audio_path),
              "-l", lang, "-t", threads, "-osrt", "-of", str(output_dir / "transcript")],
-            capture_output=True, text=True, timeout=3600,
+            capture_output=True, text=True, timeout=None,
             encoding="utf-8", errors="replace",
         )
         if result.returncode != 0:
@@ -356,7 +356,7 @@ def try_asr_extraction(url, eid, item, output_dir):
     except subprocess.TimeoutExpired:
         audio_path.unlink(missing_ok=True)
         return {"status": "retryable", "error_type": "whisper_timeout",
-                "error_message": "whisper.cpp timeout after 30min"}
+                "error_message": "whisper.cpp timeout"}
     except Exception as e:
         audio_path.unlink(missing_ok=True)
         return {"status": "retryable", "error_type": "whisper_error",
