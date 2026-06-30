@@ -1,9 +1,9 @@
 {
-  "updated_at": "2026-06-29T18:50:56.010891",
-  "total_pending": 189,
-  "total_processed": 70,
-  "total_success": 2,
-  "total_failed": 68,
-  "batch_num": 7,
-  "elapsed_seconds": 2336.052438
+  "updated_at": "2026-06-30T09:45:25.352676",
+  "total_pending": 10,
+  "total_processed": 10,
+  "total_success": 0,
+  "total_failed": 9,
+  "batch_num": 1,
+  "elapsed_seconds": 96.239469
 }

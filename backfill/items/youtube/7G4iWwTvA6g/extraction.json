@@ -1,14 +1,14 @@
 {
-  "status": "retryable",
-  "method": "",
-  "language": "",
-  "attempts": 2,
+  "status": "success",
+  "method": "yt-dlp",
+  "language": "en",
+  "attempts": 3,
   "duration_seconds": 8653,
   "last_timestamp_seconds": null,
-  "coverage_ratio": null,
-  "text_chars": null,
-  "sha256": null,
-  "completed_at": "2026-06-29T18:47:36.155412",
-  "error_type": "unknown",
-  "error_message": "WARNING: [youtube] ('Unable to connect to proxy', NewConnectionError(\"HTTPSConnection(host='127.0.0.1', port=7900): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。\")). Retrying (1/3)...\nWARNING: [youtube] ('Unable to connect to proxy', NewConnectionError(\"HTTPSConnection(hos"
+  "coverage_ratio": 0.9994891944990176,
+  "text_chars": 151204,
+  "sha256": "64706692972fcdd54125d9d17400f9d2d8546ddc9ecc80ad08ee00d36efdbf65",
+  "completed_at": "2026-06-29T19:05:32.330681",
+  "error_type": null,
+  "error_message": null
 }

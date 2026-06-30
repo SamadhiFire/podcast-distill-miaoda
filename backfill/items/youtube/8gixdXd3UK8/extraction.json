@@ -2,13 +2,13 @@
   "status": "retryable",
   "method": "",
   "language": "",
-  "attempts": 1,
+  "attempts": 3,
   "duration_seconds": 5543,
   "last_timestamp_seconds": null,
   "coverage_ratio": null,
   "text_chars": null,
   "sha256": null,
-  "completed_at": "2026-06-29T16:29:33.180951",
-  "error_type": "rate_limited",
-  "error_message": "WARNING: [youtube] Unable to download webpage: HTTP Error 429: Too Many Requests (caused by <HTTPError 429: Too Many Requests>)\nWARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your comman"
+  "completed_at": "2026-06-29T19:00:34.962705",
+  "error_type": "timeout",
+  "error_message": "WARNING: [youtube] (<HTTPSConnection(host='www.youtube.com', port=443) at 0x17fe72f6540>, 'Connection to www.youtube.com timed out. (connect timeout=20.0)'). Retrying (1/3)...\nWARNING: [youtube] (<HTTPSConnection(host='www.youtube.com', port=443) at 0x17fe72f4fb0>, 'Connection to www.youtube.com tim"
 }

@@ -427,11 +427,13 @@ def run_phase_d(max_batches=None, skip_xiaoyuzhou=False, skip_youtube=False):
     cur = conn.cursor()
 
     # Get pending items (YouTube first, then Xiaoyuzhou)
+    # Include: pending, retryable, needs_asr (xiaoyuzhou only)
     cur.execute("""
         SELECT i.* FROM items i
         LEFT JOIN extractions e ON i.item_id = e.item_id
         WHERE (e.status IS NULL OR e.status = 'pending'
-               OR (e.status = 'retryable' AND e.attempts < 3))
+               OR (e.status = 'retryable' AND e.attempts < 3)
+               OR (e.status = 'needs_asr' AND i.platform = 'xiaoyuzhou'))
           AND i.duration_seconds >= ?
         ORDER BY
             CASE WHEN i.platform='youtube' THEN 0 ELSE 1 END,
