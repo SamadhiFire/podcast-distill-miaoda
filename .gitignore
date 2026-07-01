@@ -20,6 +20,7 @@ cookies.txt
 cookies*.txt
 reports/
 subtitles/
+subtitles_bundle*.zip
 _gen_skeleton.py
 .workbuddy/
 

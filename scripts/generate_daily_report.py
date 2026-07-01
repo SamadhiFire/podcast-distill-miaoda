@@ -65,11 +65,19 @@ def parse_args() -> argparse.Namespace:
 
 def normalize_url(url: str) -> str:
     parsed = urlparse(url or "")
-    if "youtube.com" in parsed.netloc and parsed.path == "/watch":
+    host = parsed.netloc.lower()
+    if host in {"youtu.be", "www.youtu.be"}:
+        video_id = parsed.path.strip("/").split("/")[0]
+        if video_id:
+            return "https://www.youtube.com/watch?" + urlencode({"v": video_id})
+    if "youtube.com" in host and parsed.path == "/watch":
         qs = parse_qs(parsed.query)
         if "v" in qs:
             return "https://www.youtube.com/watch?" + urlencode({"v": qs["v"][0]})
-    if "youtube.com" in parsed.netloc and parsed.path == "/playlist":
+    shorts = re.fullmatch(r"/shorts/([^/]+)", parsed.path)
+    if "youtube.com" in host and shorts:
+        return "https://www.youtube.com/watch?" + urlencode({"v": shorts.group(1)})
+    if "youtube.com" in host and parsed.path == "/playlist":
         qs = parse_qs(parsed.query)
         if "list" in qs:
             return "https://www.youtube.com/playlist?" + urlencode({"list": qs["list"][0]})
