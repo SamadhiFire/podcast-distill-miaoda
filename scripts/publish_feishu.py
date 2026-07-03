@@ -33,6 +33,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--title", required=True)
     parser.add_argument("--doc-token", help="overwrite an existing Feishu document instead of creating a new one")
     parser.add_argument("--node-token", help="existing Wiki node token, used for the notification URL")
+    parser.add_argument("--wiki-node-token", help="overwrite an existing Wiki node by resolving its obj_token")
+    parser.add_argument("--wiki-url", help="overwrite an existing Wiki page URL, for example https://my.feishu.cn/wiki/...")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--cleanup-old",
@@ -95,6 +97,35 @@ def create_wiki_doc(token: str, title: str) -> tuple[str, str | None]:
     if not doc_token:
         raise RuntimeError(f"Cannot find document token in Feishu response: {data}")
     return doc_token, node_token
+
+
+def extract_wiki_node_token(value: str) -> str:
+    """Accept either a raw Wiki node token or a Feishu/Lark Wiki URL."""
+    candidate = (value or "").strip()
+    if not candidate:
+        return ""
+    match = re.search(r"/wiki/([^/?#]+)", candidate)
+    if match:
+        return match.group(1)
+    return candidate
+
+
+def get_wiki_doc_token(token: str, node_token: str) -> tuple[str, str]:
+    """Resolve a Wiki node token to the underlying Docx obj_token."""
+    space_id = required_env("FEISHU_WIKI_SPACE_ID")
+    data = feishu_json_request(
+        "GET",
+        f"/wiki/v2/spaces/{space_id}/nodes/{node_token}",
+        token,
+    )
+    node = data.get("data", {}).get("node", {})
+    obj_type = str(node.get("obj_type") or "").lower()
+    doc_token = node.get("obj_token") or node.get("token")
+    if obj_type and obj_type != "docx":
+        raise RuntimeError(f"Wiki node is {obj_type}, not docx: {node_token}")
+    if not doc_token:
+        raise RuntimeError(f"Cannot resolve docx obj_token for Wiki node: {data}")
+    return str(doc_token), str(node.get("node_token") or node_token)
 
 
 INLINE_TOKEN_RE = re.compile(r"(\*\*.+?\*\*|https?://[^\s<>]+)")
@@ -284,201 +315,32 @@ def feishu_json_request(
     raise RuntimeError(f"Feishu API request failed without response: {method} {path}")
 
 
-def _xml_text(element: ET.Element) -> str:
-    return re.sub(r"\s+", " ", "".join(element.itertext())).strip()
-
-
-def _table_rows_to_lines(table: ET.Element) -> list[str]:
-    lines: list[str] = []
-    rows = table.findall(".//tr")
-    for index, row in enumerate(rows):
-        cells = [_xml_text(cell) for cell in list(row) if cell.tag in {"th", "td"}]
-        if index == 0 and any(cell.tag == "th" for cell in list(row)):
-            continue
-        if any(cells):
-            if len(cells) == 2:
-                lines.append(f"{cells[0]}：{cells[1]}")
-            else:
-                lines.append(" | ".join(cells))
-    return lines
-
-
-def split_doc_line(line: str, limit: int = 1800) -> list[str]:
-    if len(line) <= limit:
-        return [line]
-    chunks: list[str] = []
-    start = 0
-    while start < len(line):
-        end = min(len(line), start + limit)
-        cut = max(line.rfind(mark, start, end) for mark in "。！？；， ")
-        if cut <= start + limit // 2:
-            cut = end
-        elif cut < len(line) and line[cut] in "。！？；，":
-            cut += 1
-        chunks.append(line[start:cut].strip())
-        start = cut
-    return [chunk for chunk in chunks if chunk]
-
-
-TEXT_LIKE_BLOCK_FIELDS = {
-    2: "text",
-    3: "heading1",
-    4: "heading2",
-    5: "heading3",
-    6: "heading4",
-    7: "heading5",
-    8: "heading6",
-    9: "heading7",
-    10: "heading8",
-    11: "heading9",
-    12: "bullet",
-    13: "ordered",
-    15: "quote",
-}
-
-
-def text_block(content: str, block_type: int = 2) -> dict[str, Any]:
-    field = TEXT_LIKE_BLOCK_FIELDS[block_type]
-    return {
-        "block_type": block_type,
-        field: {
-            "elements": [
-                {
-                    "text_run": {
-                        "content": content,
-                        "text_element_style": {},
-                    }
-                }
-            ],
-            "style": {},
-        },
-    }
-
-
-def xml_to_docx_blocks(xml_content: str) -> list[dict[str, Any]]:
-    blocks: list[dict[str, Any]] = []
-    root = ET.fromstring(f"<root>{xml_content}</root>")
-
-    def add_text(value: str, block_type: int = 2) -> None:
-        text = re.sub(r"\s+", " ", value).strip()
-        if not text:
-            return
-        for chunk in split_doc_line(text):
-            blocks.append(text_block(chunk, block_type=block_type))
-
-    def walk(element: ET.Element) -> None:
-        tag = element.tag.lower()
-        if re.fullmatch(r"h[1-6]", tag):
-            level = int(tag[1])
-            add_text(_xml_text(element), block_type=level + 2)
-        elif tag == "p":
-            add_text(_xml_text(element))
-        elif tag == "blockquote":
-            add_text(_xml_text(element), block_type=15)
-        elif tag == "hr":
-            blocks.append({"block_type": 22, "divider": {}})
-        elif tag == "ul":
-            for item in element.findall("./li"):
-                add_text(_xml_text(item), block_type=12)
-        elif tag == "ol":
-            for item in element.findall("./li"):
-                add_text(_xml_text(item), block_type=13)
-        elif tag == "table":
-            for line in _table_rows_to_lines(element):
-                add_text(line, block_type=12)
-        elif tag == "callout":
-            for child in list(element):
-                walk(child)
-        else:
-            for child in list(element):
-                walk(child)
-
-    for child in list(root):
-        walk(child)
-    return blocks or [text_block("（空日报）")]
-
-
-def get_docx_root_block_id(token: str, doc_token: str) -> str:
-    data = feishu_json_request(
-        "GET",
-        f"/docx/v1/documents/{doc_token}/blocks",
-        token,
-        params={"document_revision_id": -1, "page_size": 500},
-    )
-    items = data.get("data", {}).get("items") or []
-    for item in items:
-        if item.get("block_type") == 1 and item.get("block_id"):
-            return str(item["block_id"])
-    if items and items[0].get("block_id"):
-        return str(items[0]["block_id"])
-    return doc_token
-
-
-def get_docx_child_count(token: str, doc_token: str, root_block_id: str) -> int:
-    count = 0
-    page_token = ""
-    while True:
-        params: dict[str, Any] = {"document_revision_id": -1, "page_size": 500}
-        if page_token:
-            params["page_token"] = page_token
-        data = feishu_json_request(
-            "GET",
-            f"/docx/v1/documents/{doc_token}/blocks/{root_block_id}/children",
-            token,
-            params=params,
-        )
-        payload = data.get("data", {})
-        count += len(payload.get("items") or [])
-        if not payload.get("has_more"):
-            break
-        page_token = payload.get("page_token", "")
-        if not page_token:
-            break
-    return count
-
-
-def delete_docx_children(token: str, doc_token: str, root_block_id: str) -> None:
-    child_count = get_docx_child_count(token, doc_token, root_block_id)
-    if child_count <= 0:
-        return
-    feishu_json_request(
-        "DELETE",
-        f"/docx/v1/documents/{doc_token}/blocks/{root_block_id}/children/batch_delete",
-        token,
-        params={"document_revision_id": -1},
-        body={"start_index": 0, "end_index": child_count},
-    )
-
-
 def write_doc_via_openapi(
     token: str,
     doc_token: str,
     xml_content: str,
     command: str = "append",
 ) -> None:
-    """Write a Feishu Docx document using OpenAPI only; no local CLI config needed."""
-    blocks = xml_to_docx_blocks(xml_content)
-    root_block_id = get_docx_root_block_id(token, doc_token)
-    if command == "overwrite":
-        delete_docx_children(token, doc_token, root_block_id)
-        insert_index = 0
+    """Import strict lark-doc XML through the same OpenAPI path used by lark-cli."""
+    body: dict[str, Any] = {
+        "format": "xml",
+        "content": xml_content,
+        "revision_id": -1,
+    }
+    if command == "append":
+        body["command"] = "block_insert_after"
+        body["block_id"] = "-1"
     else:
-        insert_index = 0
+        body["command"] = command
 
-    batch_size = max(1, int(os.getenv("FEISHU_DOCX_BLOCK_BATCH_SIZE", "40")))
-    for start in range(0, len(blocks), batch_size):
-        chunk = blocks[start : start + batch_size]
-        feishu_json_request(
-            "POST",
-            f"/docx/v1/documents/{doc_token}/blocks/{root_block_id}/children",
-            token,
-            params={"document_revision_id": -1},
-            body={"index": insert_index, "children": chunk},
-            timeout=60,
-        )
-        insert_index += len(chunk)
-        time.sleep(0.4)
-    print(f"Feishu OpenAPI wrote {len(blocks)} text block(s) to doc {doc_token}")
+    feishu_json_request(
+        "PUT",
+        f"/docs_ai/v1/documents/{doc_token}",
+        token,
+        body=body,
+        timeout=120,
+    )
+    print(f"Feishu Docs AI imported {len(xml_content)} XML char(s) to doc {doc_token} with {command}")
 
 
 def notify(title: str, url: str, summary: str) -> None:
@@ -681,9 +543,6 @@ def update_wiki_node_title(token: str, node_token: str, title: str) -> None:
         return
     code = data.get("code", data.get("StatusCode", 0))
     if code != 0:
-        raise RuntimeError(f"Feishu webhook error: {data}")
-    data = resp.json()
-    if data.get("code") != 0:
         raise RuntimeError(f"Feishu update node title error: {data}")
 
 
@@ -774,11 +633,21 @@ def main() -> int:
         if args.doc_token:
             document_id = args.doc_token
             node_token = args.node_token
+            publish_document_id = document_id
+            command = "overwrite"
+        elif args.wiki_url or args.wiki_node_token:
+            requested_node_token = extract_wiki_node_token(args.wiki_url or args.wiki_node_token)
+            if not requested_node_token:
+                raise RuntimeError("--wiki-url or --wiki-node-token did not contain a Wiki node token")
+            document_id, node_token = get_wiki_doc_token(token, requested_node_token)
+            update_wiki_node_title(token, node_token, args.title)
+            publish_document_id = node_token
             command = "overwrite"
         else:
             document_id, node_token = create_wiki_doc(token, args.title)
-            command = "append"
-        write_doc_via_openapi(token, document_id, xml_content, command=command)
+            publish_document_id = node_token or document_id
+            command = "overwrite"
+        write_doc_via_openapi(token, publish_document_id, xml_content, command=command)
         reordered = sort_daily_reports_below_pinned_page(token)
         if reordered:
             print(f"Reordered {reordered} daily report node(s) below the pinned Wiki page")

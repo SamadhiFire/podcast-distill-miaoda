@@ -12,6 +12,10 @@ on:
         required: false
         default: false
         type: boolean
+      feishu_wiki_url:
+        description: "Optional existing Feishu Wiki page URL to overwrite instead of creating a new page."
+        required: false
+        type: string
   schedule:
     # 06:15 Beijing time (UTC 22:15 previous day), after the 06:00 data window closes.
     - cron: "15 22 * * *"
@@ -180,16 +184,20 @@ jobs:
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_WIKI_SPACE_ID: ${{ secrets.FEISHU_WIKI_SPACE_ID }}
           FEISHU_NOTIFY_WEBHOOK: ${{ secrets.FEISHU_NOTIFY_WEBHOOK }}
+          FEISHU_WIKI_URL: ${{ github.event.inputs.feishu_wiki_url }}
         shell: bash
         run: |
-          DRY_RUN=""
+          EXTRA_ARGS=()
           if [ "${{ github.event.inputs.dry_run_feishu }}" = "true" ]; then
-            DRY_RUN="--dry-run"
+            EXTRA_ARGS+=("--dry-run")
+          fi
+          if [ -n "$FEISHU_WIKI_URL" ]; then
+            EXTRA_ARGS+=("--wiki-url" "$FEISHU_WIKI_URL")
           fi
           python scripts/publish_feishu.py \
             --file "$REPORT_PATH" \
             --title "${REPORT_DATE} 播客与视频更新日报" \
-            $DRY_RUN
+            "${EXTRA_ARGS[@]}"
 
       - name: Upload run artifacts
         if: always()

@@ -17,6 +17,7 @@ cookies*.txt
 # Local runtime outputs
 .cache/
 .workbuddy/
+lark_backups/
 reports/
 test_results/
 subtitles/
