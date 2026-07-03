@@ -51,6 +51,10 @@ whisper.cpp/
 *.jpeg
 *.png
 
+# Repository documentation assets
+!docs/assets/
+!docs/assets/*.png
+
 # Generated config/state
 config/daily_urls*.txt
 config/last_check.json
