@@ -29,6 +29,7 @@ try:
         build_segment_extraction_messages,
         build_topic_segments,
         build_transcript_profile,
+        compact_segment_evidence_for_prompt,
         item_artifact_id,
         normalize_ranked_insights,
         normalize_segment_evidence,
@@ -42,6 +43,7 @@ except ModuleNotFoundError:  # Imported as scripts.generate_daily_report in test
         build_segment_extraction_messages,
         build_topic_segments,
         build_transcript_profile,
+        compact_segment_evidence_for_prompt,
         item_artifact_id,
         normalize_ranked_insights,
         normalize_segment_evidence,
@@ -66,6 +68,53 @@ CATEGORIES = [
     "新闻 / 时评 / 全球议题",
     "文化 / 社会 / 人文",
 ]
+
+DEEP_SUMMARY_GUIDANCE = (
+    "Section responsibilities: "
+    "summary means '完整摘要 · 深读' and must be continuous analytical paragraphs, not bullets. "
+    "It should explain the central question, argument arc, causal mechanism, important evidence, "
+    "turning points, implications, and unresolved caveats. "
+    "core_points are short portable claims only; key_facts are checkable names, numbers, events, "
+    "papers, companies, policies, or products only; tensions are disagreements, limits, risks, "
+    "and unanswered questions only; takeaways are reusable reader lenses or actions only. "
+    "Avoid duplicating the same sentence across sections. "
+    "Every summary paragraph must contain a claim plus support plus meaning; generic topic lists fail."
+)
+
+DEEP_DIVE_HINTS = (
+    "interview",
+    "conversation",
+    "podcast",
+    "masters in business",
+    "odd lots",
+    "lex fridman",
+    "acquired",
+    "founder",
+    "ceo",
+    "professor",
+    "venture capital",
+    "world model",
+    "ai",
+    "startup",
+    "market",
+    "economy",
+    "china",
+    "history",
+    "strategy",
+    "访谈",
+    "对话",
+    "播客",
+    "创始人",
+    "投资",
+    "财经",
+    "经济",
+    "科技",
+    "人工智能",
+    "创业",
+    "商业",
+    "历史",
+    "战略",
+)
 
 
 class LLMHTTPError(RuntimeError):
@@ -101,6 +150,11 @@ def parse_args() -> argparse.Namespace:
         "--digest-cache-dir",
         default="reports/digest_cache",
         help="reuse per-item final digest JSON checkpoints across retries",
+    )
+    parser.add_argument(
+        "--fileid-cache-dir",
+        default="reports/qwen_file_cache",
+        help="cache DashScope qwen-long uploaded file ids by transcript hash",
     )
     parser.add_argument("--output", required=True)
     parser.add_argument(
@@ -197,22 +251,44 @@ def llm_configured() -> bool:
     return bool(os.getenv("LLM_BASE_URL") and os.getenv("LLM_MODEL"))
 
 
+def llm_api_base() -> str:
+    workspace_id = os.getenv("LLM_WORKSPACE_ID") or os.getenv("QWEN_WORKSPACE_ID")
+    if workspace_id and os.getenv("LLM_USE_WORKSPACE_BASE", "0") == "1":
+        return f"https://{workspace_id}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    return os.environ["LLM_BASE_URL"].rstrip("/")
+
+
+def llm_endpoint(path: str) -> str:
+    endpoint = llm_api_base().rstrip("/")
+    if endpoint.endswith("/chat/completions"):
+        endpoint = endpoint[: -len("/chat/completions")]
+    return endpoint.rstrip("/") + path
+
+
 def llm_chat(messages: list[dict[str, str]], temperature: float = 0.2) -> str:
-    base_url = os.environ["LLM_BASE_URL"].rstrip("/")
     model = os.environ["LLM_MODEL"]
     api_key = os.getenv("LLM_API_KEY", "")
-    endpoint = base_url
-    if not endpoint.endswith("/chat/completions"):
-        endpoint = endpoint.rstrip("/") + "/chat/completions"
+    endpoint = llm_endpoint("/chat/completions")
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     effective_messages = list(messages)
     if os.getenv("LLM_NEUTRAL_ARCHIVE_PREAMBLE", "1") != "0":
-        effective_messages = [
-            {"role": "system", "content": LLM_NEUTRAL_ARCHIVE_PREAMBLE},
-            *effective_messages,
-        ]
+        has_fileid = any(
+            message.get("role") == "system"
+            and str(message.get("content", "")).strip().startswith("fileid://")
+            for message in effective_messages
+        )
+        if has_fileid and effective_messages and effective_messages[0].get("role") == "system":
+            effective_messages[0] = {
+                **effective_messages[0],
+                "content": LLM_NEUTRAL_ARCHIVE_PREAMBLE + "\n\n" + str(effective_messages[0].get("content", "")),
+            }
+        else:
+            effective_messages = [
+                {"role": "system", "content": LLM_NEUTRAL_ARCHIVE_PREAMBLE},
+                *effective_messages,
+            ]
     retry_attempts = max(1, int(os.getenv("LLM_RETRY_ATTEMPTS", "4")))
     retry_base = float(os.getenv("LLM_RETRY_BASE_SECONDS", "2"))
     retry_max = float(os.getenv("LLM_RETRY_MAX_SECONDS", "30"))
@@ -248,6 +324,124 @@ def llm_chat(messages: list[dict[str, str]], temperature: float = 0.2) -> str:
     if last_error:
         raise last_error
     raise RuntimeError("LLM request failed without a response")
+
+
+def sha1_text(value: str) -> str:
+    import hashlib
+
+    return hashlib.sha1(value.encode("utf-8", errors="replace")).hexdigest()
+
+
+def qwen_file_cache_path(cache_dir: Path | None, transcript: str) -> Path | None:
+    if cache_dir is None:
+        return None
+    return cache_dir / f"{sha1_text(transcript)}.json"
+
+
+def wait_qwen_file_ready(file_id: str) -> None:
+    if os.getenv("LLM_FILE_WAIT_READY", "1") == "0":
+        return
+    api_key = os.getenv("LLM_API_KEY", "")
+    endpoint = llm_endpoint(f"/files/{file_id}")
+    headers = {"Authorization": f"Bearer {api_key}"}
+    timeout_seconds = int(os.getenv("LLM_FILE_READY_TIMEOUT", "300"))
+    deadline = time.time() + timeout_seconds
+    ready_statuses = {"processed", "success", "succeeded", "ready", "available", "uploaded"}
+    pending_statuses = {"pending", "processing", "running", "created", "in_progress"}
+    while time.time() < deadline:
+        try:
+            resp = requests.get(endpoint, headers=headers, timeout=30)
+        except requests.RequestException:
+            time.sleep(2)
+            continue
+        if resp.status_code in {404, 405}:
+            return
+        if not resp.ok:
+            return
+        try:
+            data = resp.json()
+        except ValueError:
+            return
+        status = str(data.get("status") or data.get("file_status") or "").lower()
+        if not status or status in ready_statuses:
+            return
+        if status not in pending_statuses:
+            return
+        time.sleep(3)
+
+
+def upload_qwen_file(
+    transcript: str,
+    item: dict[str, Any],
+    cache_dir: Path | None,
+) -> str:
+    if os.getenv("LLM_FILEID_ENABLED", "1") == "0":
+        raise RuntimeError("LLM fileid mode is disabled")
+    api_key = os.getenv("LLM_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("LLM_API_KEY is required for qwen-long file upload")
+
+    cache_path = qwen_file_cache_path(cache_dir, transcript)
+    if cache_path is not None and cache_path.exists():
+        try:
+            cached = read_json(cache_path)
+            if (
+                isinstance(cached, dict)
+                and cached.get("base_url") == llm_api_base().rstrip("/")
+                and cached.get("file_id")
+            ):
+                return str(cached["file_id"])
+        except Exception:
+            pass
+
+    upload_endpoint = llm_endpoint("/files")
+    headers = {"Authorization": f"Bearer {api_key}"}
+    filename = re.sub(r"[^A-Za-z0-9_-]+", "_", str(item.get("title") or item.get("url") or "transcript"))
+    filename = (filename[:80] or "transcript") + ".txt"
+    retry_attempts = max(1, int(os.getenv("LLM_FILE_UPLOAD_RETRY_ATTEMPTS", os.getenv("LLM_RETRY_ATTEMPTS", "4"))))
+    last_error: Exception | None = None
+    for attempt in range(1, retry_attempts + 1):
+        try:
+            files = {"file": (filename, transcript.encode("utf-8"), "text/plain")}
+            resp = requests.post(
+                upload_endpoint,
+                headers=headers,
+                data={"purpose": "file-extract"},
+                files=files,
+                timeout=int(os.getenv("LLM_FILE_UPLOAD_TIMEOUT", "600")),
+            )
+            if resp.ok:
+                data = resp.json()
+                file_id = str(data.get("id") or data.get("file_id") or "")
+                if not file_id:
+                    raise RuntimeError(f"file upload response has no file id: {data}")
+                wait_qwen_file_ready(file_id)
+                if cache_path is not None:
+                    write_json(
+                        cache_path,
+                        {
+                            "file_id": file_id,
+                            "base_url": llm_api_base().rstrip("/"),
+                            "model": os.getenv("LLM_MODEL", ""),
+                            "sha1": sha1_text(transcript),
+                            "bytes": len(transcript.encode("utf-8", errors="replace")),
+                            "title": item.get("title") or item.get("original_title") or "",
+                        },
+                    )
+                return file_id
+            error = LLMHTTPError(resp.status_code, resp.text[:4000], llm_error_code(resp.text[:4000]))
+            last_error = error
+            if resp.status_code not in {408, 409, 429, 500, 502, 503, 504}:
+                raise error
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            last_error = exc
+        if attempt < retry_attempts:
+            delay = min(30.0, 2.0 * (2 ** (attempt - 1)))
+            print(f"Qwen file upload failed on attempt {attempt}/{retry_attempts}; retrying in {delay:.1f}s: {last_error}", flush=True)
+            time.sleep(delay)
+    if last_error:
+        raise last_error
+    raise RuntimeError("Qwen file upload failed without a response")
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
@@ -359,28 +553,52 @@ def normalize_partial(raw: dict[str, Any], allowed_refs: set[str]) -> dict[str, 
     return output
 
 
-def digest_contract_for_item(item: dict[str, Any]) -> dict[str, Any]:
+def digest_contract_for_item(
+    item: dict[str, Any],
+    profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile = profile or {}
     duration = int(item.get("duration") or item.get("duration_seconds") or 0)
-    if duration >= 1800:
+    text_chars = int(profile.get("text_chars") or 0)
+    metadata_text = " ".join(
+        str(item.get(key) or "")
+        for key in ("title", "original_title", "source_name", "category", "description", "platform")
+    ).lower()
+    density_score = 0
+    if duration >= 1800 or text_chars >= 80000:
+        density_score += 2
+    elif duration >= 900 or text_chars >= 30000:
+        density_score += 1
+    if item.get("category") in {"科技 / AI / VC", "商业 / 财经 / 投资", "产品 / 创业 / 管理"}:
+        density_score += 1
+    if any(hint in metadata_text for hint in DEEP_DIVE_HINTS):
+        density_score += 2
+    if re.search(r"\b(ai|vc|ipo|fed|gdp|llm|gpu|saas|m&a)\b", metadata_text):
+        density_score += 1
+
+    if density_score >= 4:
         return {
             "content_density": "high",
-            "summary_min": 4,
-            "summary_max": 6,
+            "summary_min": 6,
+            "summary_max": 9,
+            "summary_char_limit": 420,
             "core_points_min": 5,
-            "core_points_max": 7,
+            "core_points_max": 8,
         }
-    if duration >= 900:
+    if density_score >= 2:
         return {
             "content_density": "standard",
-            "summary_min": 3,
-            "summary_max": 5,
+            "summary_min": 4,
+            "summary_max": 6,
+            "summary_char_limit": 340,
             "core_points_min": 4,
             "core_points_max": 6,
         }
     return {
         "content_density": "brief",
-        "summary_min": 2,
-        "summary_max": 4,
+        "summary_min": 3,
+        "summary_max": 5,
+        "summary_char_limit": 280,
         "core_points_min": 3,
         "core_points_max": 5,
     }
@@ -503,6 +721,7 @@ def build_metadata_digest_messages(
     count_contract = (
         f"content_density={schema.get('content_density')}; "
         f"summary items={contract.get('summary_items')}; "
+        f"summary chars/item<={contract.get('summary_char_limit')}; "
         f"core_points items={contract.get('core_points_items')}; "
         f"takeaways items={contract.get('takeaways_items')}."
     )
@@ -515,7 +734,7 @@ def build_metadata_digest_messages(
                 "Use only the supplied metadata and public description. Do not invent details. "
                 "If a point is based on title/description rather than full transcript, phrase it cautiously. "
                 "Every sourced field must cite M001. Output one JSON object only. "
-                f"Hard count contract: {count_contract}"
+                f"{DEEP_SUMMARY_GUIDANCE} Hard count contract: {count_contract}"
             ),
         },
         {
@@ -544,7 +763,10 @@ def build_final_schema(first_ref: str, contract: dict[str, Any]) -> dict[str, An
         "summary": [
             {
                 "text": (
-                    "150 chars or fewer; preserve argument spine, evidence, consequence, caveat; "
+                    f"{contract['summary_char_limit']} chars or fewer; this is '完整摘要 · 深读', "
+                    "write one coherent analytical paragraph per item, not a bullet; each paragraph "
+                    "must include claim + support + meaning, and must not duplicate core_points, "
+                    "key_facts, tensions, or takeaways; "
                     f"return {contract['summary_min']} to {contract['summary_max']} items"
                 ),
                 "source_refs": [first_ref],
@@ -590,11 +812,140 @@ def build_final_schema(first_ref: str, contract: dict[str, Any]) -> dict[str, An
         "importance_score": 4,
         "contract": {
             "summary_items": f"{contract['summary_min']}..{contract['summary_max']}",
+            "summary_char_limit": contract["summary_char_limit"],
             "core_points_items": f"{contract['core_points_min']}..{contract['core_points_max']}",
             "takeaways_items": "1..3",
             "include_item": "This item is >= 5 minutes and must appear in the report.",
+            "section_roles": DEEP_SUMMARY_GUIDANCE,
         },
     }
+
+
+def build_fileid_final_digest_messages(
+    item: dict[str, Any],
+    profile: dict[str, Any],
+    file_id: str,
+    segment_evidence: list[dict[str, Any]],
+    ranked: dict[str, Any],
+    schema: dict[str, Any],
+) -> list[dict[str, str]]:
+    contract = schema.get("contract", {}) if isinstance(schema.get("contract"), dict) else {}
+    count_contract = (
+        f"Hard count contract: content_density={schema.get('content_density')}; "
+        f"summary items={contract.get('summary_items', 'follow schema')}; "
+        f"summary chars/item<={contract.get('summary_char_limit', 'follow schema')}; "
+        f"core_points items={contract.get('core_points_items', 'follow schema')}; "
+        f"takeaways items={contract.get('takeaways_items', '1..3')}. "
+        "The item is eligible for the report; do not omit it because of a low score."
+    )
+    payload = {
+        "profile": profile,
+        "ranked": ranked,
+        "segment_evidence": compact_segment_evidence_for_prompt(segment_evidence, aggressive=True),
+    }
+    payload_json = json.dumps(payload, ensure_ascii=False)
+    payload_limit = int(os.getenv("LLM_FILEID_EVIDENCE_PAYLOAD_CHARS", "16000"))
+    if len(payload_json) > payload_limit:
+        payload_json = payload_json[:payload_limit]
+    return [
+        {
+            "role": "system",
+            "content": (
+                "The attached file is the full transcript. Use it as the primary source. "
+                "The structured evidence package is a navigation aid and citation map. "
+                "Do not invent facts outside the transcript, metadata, and evidence package. "
+                f"{DEEP_SUMMARY_GUIDANCE} "
+                "Every factual or interpretive field with source_refs must cite valid segment refs such as S001. "
+                f"{count_contract} Output one JSON object only, in Chinese."
+            ),
+        },
+        {"role": "system", "content": f"fileid://{file_id}"},
+        {
+            "role": "user",
+            "content": (
+                f"{count_contract}\n\n"
+                "Return JSON that matches this schema exactly:\n"
+                f"{json.dumps(schema, ensure_ascii=False)}\n\n"
+                f"Item metadata:\n{json.dumps(item, ensure_ascii=False)}\n\n"
+                f"Evidence package:\n{payload_json}"
+            ),
+        },
+    ]
+
+
+def should_use_direct_fileid(item: dict[str, Any], transcript: str) -> bool:
+    if os.getenv("LLM_FILEID_DIRECT_ENABLED", "1") == "0":
+        return False
+    duration = int(item.get("duration") or item.get("duration_seconds") or 0)
+    min_duration = int(os.getenv("LLM_FILEID_DIRECT_MIN_DURATION_SECONDS", "3600"))
+    min_chars = int(os.getenv("LLM_FILEID_DIRECT_MIN_CHARS", "80000"))
+    return bool(transcript.strip()) and (duration >= min_duration or len(transcript) >= min_chars)
+
+
+def build_fileid_direct_digest_messages(
+    item: dict[str, Any],
+    profile: dict[str, Any],
+    file_id: str,
+    schema: dict[str, Any],
+) -> list[dict[str, str]]:
+    contract = schema.get("contract", {}) if isinstance(schema.get("contract"), dict) else {}
+    count_contract = (
+        f"Hard count contract: content_density={schema.get('content_density')}; "
+        f"summary items={contract.get('summary_items', 'follow schema')}; "
+        f"summary chars/item<={contract.get('summary_char_limit', 'follow schema')}; "
+        f"core_points items={contract.get('core_points_items', 'follow schema')}; "
+        f"takeaways items={contract.get('takeaways_items', '1..3')}. "
+        "This item is >= 5 minutes and must appear in the report."
+    )
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a senior Chinese editor for long-form podcast/video transcripts. "
+                "The attached file is the complete transcript and is the primary source. "
+                "Read across the full transcript before writing; do not summarize only the beginning. "
+                "Find the episode's central question, argument arc, strongest mechanisms, examples, numbers, "
+                "speaker positions, caveats, and reusable reader value. "
+                "Do not write a chronological recap unless the argument is chronological. "
+                f"{DEEP_SUMMARY_GUIDANCE} "
+                "Every field with source_refs must cite F001 exactly. "
+                f"{count_contract} Output one JSON object only, in Chinese."
+            ),
+        },
+        {"role": "system", "content": f"fileid://{file_id}"},
+        {
+            "role": "user",
+            "content": (
+                f"{count_contract}\n\n"
+                "Return JSON that matches this schema exactly. Use source_refs [\"F001\"] for all sourced fields:\n"
+                f"{json.dumps(schema, ensure_ascii=False)}\n\n"
+                f"Item metadata:\n{json.dumps(item, ensure_ascii=False)}\n\n"
+                f"Transcript profile:\n{json.dumps(profile, ensure_ascii=False)}"
+            ),
+        },
+    ]
+
+
+def summarize_item_fileid_direct(
+    item: dict[str, Any],
+    transcript: str,
+    transcript_meta: dict[str, Any] | None,
+    max_attempts: int,
+    fileid_cache_dir: Path | None,
+) -> dict[str, Any]:
+    profile = build_transcript_profile(item, transcript, transcript_meta)
+    evidence = {"F001": transcript}
+    contract = digest_contract_for_item(item, profile)
+    schema = build_final_schema("F001", contract)
+    print(f"Uploading transcript for direct qwen-long fileid mode: {item.get('title')}", flush=True)
+    file_id = upload_qwen_file(transcript, item, fileid_cache_dir)
+    digest = llm_json(
+        build_fileid_direct_digest_messages(item, profile, file_id, schema),
+        lambda raw, c=contract: validate_final_digest(raw, item, evidence, c),
+        max_attempts,
+    )
+    digest["quality"] = "llm_fileid_full"
+    return digest
 
 
 def metadata_llm_digest(
@@ -607,11 +958,11 @@ def metadata_llm_digest(
 ) -> dict[str, Any]:
     profile = build_transcript_profile(item, transcript, transcript_meta)
     evidence = metadata_evidence_map(item)
-    contract = digest_contract_for_item(item)
+    contract = digest_contract_for_item(item, profile)
     schema = build_final_schema("M001", contract)
     digest = llm_json(
         build_metadata_digest_messages(item, profile, evidence, schema, reason),
-        lambda raw: validate_final_digest(raw, item, evidence),
+        lambda raw, c=contract: validate_final_digest(raw, item, evidence, c),
         max_attempts,
     )
     digest["quality"] = "llm_metadata_due_input_inspection"
@@ -626,7 +977,7 @@ def deterministic_moderation_digest(
     source = item.get("description") or transcript or item.get("title") or ""
     sentences = extract_sentences(source, limit=10)
     title = short_title(item)
-    contract = digest_contract_for_item(item)
+    contract = digest_contract_for_item(item, {"text_chars": len(transcript)})
     summary_min = int(contract["summary_min"])
     core_min = int(contract["core_points_min"])
     while len(sentences) < max(summary_min, core_min):
@@ -703,7 +1054,7 @@ def load_digest_cache(
         data = read_json(path)
     except Exception:
         return None
-    if not isinstance(data, dict) or data.get("cache_version") != 2:
+    if not isinstance(data, dict) or data.get("cache_version") != 3:
         return None
     if data.get("model") != os.getenv("LLM_MODEL", ""):
         return None
@@ -723,7 +1074,7 @@ def write_digest_cache(
     write_json(
         path,
         {
-            "cache_version": 2,
+            "cache_version": 3,
             "date": report_date,
             "model": os.getenv("LLM_MODEL", ""),
             "item_url": item.get("url", ""),
@@ -734,7 +1085,10 @@ def write_digest_cache(
 
 
 def validate_final_digest(
-    raw: dict[str, Any], item: dict[str, Any], evidence: dict[str, str]
+    raw: dict[str, Any],
+    item: dict[str, Any],
+    evidence: dict[str, str],
+    contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     raw = coerce_final_digest_shape(raw, evidence)
     valid_refs = set(evidence)
@@ -745,7 +1099,7 @@ def validate_final_digest(
             raise ValueError(f"{field} must be an object with text and source_refs")
         if not any(str(ref) in valid_refs for ref in value.get("source_refs", [])):
             raise ValueError(f"{field} must cite a valid source_ref")
-    contract = digest_contract_for_item(item)
+    contract = contract or digest_contract_for_item(item)
     density = clean_text(raw.get("content_density") or "standard").lower()
     if density not in {"brief", "standard", "high"}:
         density = str(contract["content_density"])
@@ -753,7 +1107,11 @@ def validate_final_digest(
         density = str(contract["content_density"])
     raw["content_density"] = density
     list_rules = {
-        "summary": (int(contract["summary_min"]), int(contract["summary_max"]), 150),
+        "summary": (
+            int(contract["summary_min"]),
+            int(contract["summary_max"]),
+            int(contract.get("summary_char_limit", 420)),
+        ),
         "core_points": (int(contract["core_points_min"]), int(contract["core_points_max"]), 90),
     }
     for field, (minimum, maximum, limit) in list_rules.items():
@@ -763,6 +1121,11 @@ def validate_final_digest(
         for value in values:
             if not isinstance(value, dict) or not str(value.get("text", "")).strip():
                 raise ValueError(f"every {field} item must contain text")
+            text = clean_text(value.get("text", ""))
+            if nonspace_len(text) > limit:
+                raise ValueError(f"every {field} item must be {limit} chars or fewer")
+            if field == "summary" and re.match(r"^\s*(?:[-*]|\d+[.)、])\s+", str(value.get("text", ""))):
+                raise ValueError("summary must be analytical paragraphs, not list items")
             if not any(str(ref) in valid_refs for ref in value.get("source_refs", [])):
                 raise ValueError(f"every {field} item must cite a valid source_ref")
     takeaways = raw.get("takeaways")
@@ -865,23 +1228,9 @@ def summarize_item_contract(
             )
         )
 
-    schema = {
-        "short_title": "18字内中文标题",
-        "one_liner": {"text": "30字内完整句", "source_refs": ["E0001"]},
-        "why_it_matters": {"text": "46字内，说明与读者的关系", "source_refs": ["E0001"]},
-        "content_density": "brief | standard | high；长节目或高密度内容选 high",
-        "summary": [{"text": "每段150字内；按时长与密度输出2到6段", "source_refs": ["E0001"]}],
-        "core_points": [{"text": "每条90字内；按时长与密度输出3到7条", "source_refs": ["E0001"]}],
-        "key_facts": [
-            {"label": "14字内", "value": "26字内", "context": "42字内", "source_refs": ["E0001"]}
-        ],
-        "takeaways": ["读者可执行或可迁移的提示，1到2条，不写研究问题"],
-        "guests": [{"text": "人物（机构/角色），1到5条", "source_refs": ["E0001"]}],
-        "topics": ["主题词，最多3个"],
-        "tensions": [{"text": "对立观点、限制或未决问题，最多3条", "source_refs": ["E0001"]}],
-        "quote": None,
-        "importance_score": 4,
-    }
+    first_ref = next(iter(evidence))
+    contract = digest_contract_for_item(item, {"text_chars": len(transcript)})
+    schema = build_final_schema(first_ref, contract)
     return llm_json(
         [
             {
@@ -889,7 +1238,7 @@ def summarize_item_contract(
                 "content": (
                     "你是中文信息早餐编辑，只负责填写 JSON 内容，绝不输出 Markdown 或 XML。"
                     "读者要在30秒内决定是否继续读。所有事实、观点和摘要必须引用证据 ID。"
-                    "速览不能牺牲深度：30分钟以上节目至少保留3段摘要和4条观点，60分钟以上或高密度内容至少保留4段摘要和5条观点。"
+                    f"{DEEP_SUMMARY_GUIDANCE}"
                     "不要写‘值得后续研究的问题’，takeaways 必须是普通读者能直接采用的看法或行动。"
                     "中英文之间保留空格。金句无法确认逐字原文时 kind 必须写 paraphrase。"
                 ),
@@ -903,7 +1252,7 @@ def summarize_item_contract(
                 ),
             },
         ],
-        lambda raw: validate_final_digest(raw, item, evidence),
+        lambda raw, c=contract: validate_final_digest(raw, item, evidence, c),
         max_attempts,
     )
 
@@ -1238,6 +1587,7 @@ def summarize_item_contract(
     transcript: str,
     max_attempts: int,
     evidence_dir: Path | None = None,
+    fileid_cache_dir: Path | None = None,
     transcript_meta: dict[str, Any] | None = None,
     timed_caption: str = "",
 ) -> dict[str, Any]:
@@ -1246,6 +1596,24 @@ def summarize_item_contract(
         return extractive_digest(item, transcript)
 
     profile = build_transcript_profile(item, transcript, transcript_meta)
+    if should_use_direct_fileid(item, transcript):
+        try:
+            return summarize_item_fileid_direct(
+                item,
+                transcript,
+                transcript_meta,
+                max_attempts,
+                fileid_cache_dir,
+            )
+        except Exception as exc:
+            if is_data_inspection_error(exc):
+                raise
+            print(
+                f"Direct qwen-long fileid synthesis failed for {item.get('title')}: {exc}; "
+                "falling back to segmented evidence pipeline.",
+                flush=True,
+            )
+
     cached_artifacts = load_evidence_artifacts(evidence_dir, item)
     if cached_artifacts is not None:
         segments, segment_evidence, ranked = cached_artifacts
@@ -1292,77 +1660,42 @@ def summarize_item_contract(
         raise RuntimeError("transcript is empty after evidence segmentation")
 
     first_ref = next(iter(evidence))
-    contract = digest_contract_for_item(item)
-    schema = {
-        "short_title": "18 chars or fewer, Chinese reader-facing title",
-        "one_liner": {
-            "text": "30 chars or fewer; specific conclusion, not a title rewrite",
-            "source_refs": [first_ref],
-        },
-        "why_it_matters": {
-            "text": "60 chars or fewer; concrete reason to read",
-            "source_refs": [first_ref],
-        },
-        "content_density": f"MUST be {contract['content_density']}",
-        "summary": [
-            {
-                "text": (
-                    "150 chars or fewer; preserve argument spine, evidence, consequence, caveat; "
-                    f"return {contract['summary_min']} to {contract['summary_max']} items"
-                ),
-                "source_refs": [first_ref],
-            }
-        ],
-        "core_points": [
-            {
-                "text": (
-                    "90 chars or fewer; claim with support, not a topic label; "
-                    f"return {contract['core_points_min']} to {contract['core_points_max']} items"
-                ),
-                "source_refs": [first_ref],
-            }
-        ],
-        "key_facts": [
-            {
-                "label": "fact label",
-                "value": "number, name, event, policy, product, or case",
-                "context": "why this fact matters",
-                "source_refs": [first_ref],
-            }
-        ],
-        "takeaways": ["reader action or reusable lens; not a research question"],
-        "guests": [
-            {
-                "text": "person / organization / role, or say no clear guest",
-                "source_refs": [first_ref],
-            }
-        ],
-        "topics": ["topic keyword"],
-        "tensions": [
-            {
-                "text": "tradeoff, limit, disagreement, incentive conflict, or open question",
-                "source_refs": [first_ref],
-            }
-        ],
-        "quote": {
-            "text": "optional quote or paraphrase",
-            "speaker": "speaker",
-            "kind": "paraphrase",
-            "source_refs": [first_ref],
-        },
-        "importance_score": 4,
-        "contract": {
-            "summary_items": f"{contract['summary_min']}..{contract['summary_max']}",
-            "core_points_items": f"{contract['core_points_min']}..{contract['core_points_max']}",
-            "takeaways_items": "1..3",
-            "include_item": "This item is >= 5 minutes and must appear in the report.",
-        },
-    }
+    contract = digest_contract_for_item(item, profile)
+    schema = build_final_schema(first_ref, contract)
+
+    use_fileid = (
+        os.getenv("LLM_FILEID_ENABLED", "1") != "0"
+        and bool(transcript.strip())
+        and (
+            len(transcript) >= int(os.getenv("LLM_FILEID_MIN_CHARS", "0"))
+            or int(item.get("duration") or item.get("duration_seconds") or 0)
+            >= int(os.getenv("LLM_FILEID_MIN_DURATION_SECONDS", "300"))
+        )
+    )
+    if use_fileid:
+        try:
+            print(f"Uploading transcript for qwen-long fileid mode: {item.get('title')}", flush=True)
+            file_id = upload_qwen_file(transcript, item, fileid_cache_dir)
+            digest = llm_json(
+                build_fileid_final_digest_messages(item, profile, file_id, segment_evidence, ranked, schema),
+                lambda raw, c=contract: validate_final_digest(raw, item, evidence, c),
+                max_attempts,
+            )
+            digest["quality"] = "llm_fileid_segmented"
+            return digest
+        except Exception as exc:
+            if is_data_inspection_error(exc):
+                raise
+            print(
+                f"qwen-long fileid final synthesis failed for {item.get('title')}: {exc}; "
+                "falling back to compact evidence synthesis.",
+                flush=True,
+            )
 
     try:
         digest = llm_json(
             build_final_digest_messages(item, profile, evidence, segment_evidence, ranked, schema),
-            lambda raw: validate_final_digest(raw, item, evidence),
+            lambda raw, c=contract: validate_final_digest(raw, item, evidence, c),
             max_attempts,
         )
     except Exception as exc:
@@ -1373,7 +1706,7 @@ def summarize_item_contract(
         try:
             digest = llm_json(
                 build_final_digest_messages(item, profile, evidence, segment_evidence, ranked, schema),
-                lambda raw: validate_final_digest(raw, item, evidence),
+                lambda raw, c=contract: validate_final_digest(raw, item, evidence, c),
                 max_attempts,
             )
         finally:
@@ -1401,6 +1734,7 @@ def main() -> int:
 
     evidence_dir = Path(args.evidence_dir) if args.evidence_dir else None
     digest_cache_dir = Path(args.digest_cache_dir) if args.digest_cache_dir else None
+    fileid_cache_dir = Path(args.fileid_cache_dir) if args.fileid_cache_dir else None
     prepared_items: list[tuple[dict[str, Any], str, dict[str, Any], str]] = []
     missing_transcripts: list[dict[str, Any]] = []
     for item in items:
@@ -1436,6 +1770,7 @@ def main() -> int:
                 transcript or item.get("description", ""),
                 args.llm_max_attempts,
                 evidence_dir=evidence_dir,
+                fileid_cache_dir=fileid_cache_dir,
                 transcript_meta=meta,
                 timed_caption=timed_caption,
             )
@@ -1502,6 +1837,7 @@ def main() -> int:
         "max_contract_attempts": args.llm_max_attempts,
         "transcripts_required": bool(args.require_transcripts),
         "evidence_dir": str(evidence_dir) if evidence_dir else "",
+        "fileid_cache_dir": str(fileid_cache_dir) if fileid_cache_dir else "",
     }
 
     output = Path(args.output)

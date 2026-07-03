@@ -144,6 +144,8 @@ jobs:
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_WORKSPACE_ID: ${{ secrets.LLM_WORKSPACE_ID }}
+          LLM_USE_WORKSPACE_BASE: "0"
           LLM_TIMEOUT: "600"
           LLM_CHUNK_CHARS: "30000"
           LLM_RETRY_ATTEMPTS: "4"
@@ -152,6 +154,13 @@ jobs:
           LLM_FINAL_PAYLOAD_CHARS: "18000"
           LLM_FINAL_PAYLOAD_CHARS_RETRY: "8000"
           LLM_NEUTRAL_ARCHIVE_PREAMBLE: "1"
+          LLM_FILEID_ENABLED: "1"
+          LLM_FILEID_MIN_DURATION_SECONDS: "300"
+          LLM_FILEID_DIRECT_ENABLED: "1"
+          LLM_FILEID_DIRECT_MIN_DURATION_SECONDS: "3600"
+          LLM_FILEID_DIRECT_MIN_CHARS: "80000"
+          LLM_FILE_UPLOAD_TIMEOUT: "600"
+          LLM_FILE_READY_TIMEOUT: "300"
         run: |
           python scripts/generate_daily_report.py \
             --date "$REPORT_DATE" \
@@ -161,6 +170,7 @@ jobs:
             --llm-policy required \
             --llm-max-attempts 3 \
             --digest-cache-dir reports/digest_cache \
+            --fileid-cache-dir reports/qwen_file_cache \
             --output "$REPORT_PATH" \
             --output-json "$REPORT_JSON_PATH"
 
@@ -182,7 +192,7 @@ jobs:
           fi
           python scripts/publish_feishu.py \
             --file "$REPORT_PATH" \
-            --title "${REPORT_DATE} 小宇宙播客日报" \
+            --title "${REPORT_DATE} 播客与视频更新日报" \
             $DRY_RUN
 
       - name: Upload run artifacts
@@ -204,3 +214,4 @@ jobs:
             subtitles/
             reports/evidence/
             reports/digest_cache/
+            reports/qwen_file_cache/

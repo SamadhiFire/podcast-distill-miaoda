@@ -13,6 +13,15 @@ from typing import Any
 
 SEGMENT_TARGET_CHARS = 8500
 SEGMENT_MAX_CHARS = 12000
+DEEP_SUMMARY_GUIDANCE = (
+    "Section responsibilities: summary means '完整摘要 · 深读' and must be continuous analytical "
+    "paragraphs, not bullets. It should explain the central question, argument arc, causal mechanism, "
+    "important evidence, turning points, implications, and unresolved caveats. core_points are short "
+    "portable claims only; key_facts are checkable names, numbers, events, papers, companies, policies, "
+    "or products only; tensions are disagreements, limits, risks, and unanswered questions only; "
+    "takeaways are reusable reader lenses or actions only. Avoid duplicating the same sentence across "
+    "sections. Every summary paragraph must contain a claim plus support plus meaning."
+)
 
 
 def compact(value: Any, limit: int = 400) -> str:
@@ -507,6 +516,7 @@ def build_final_digest_messages(
     count_contract = (
         f"Hard count contract: content_density={schema.get('content_density')}; "
         f"summary items={contract.get('summary_items', 'follow schema')}; "
+        f"summary chars/item<={contract.get('summary_char_limit', 'follow schema')}; "
         f"core_points items={contract.get('core_points_items', 'follow schema')}; "
         f"takeaways items={contract.get('takeaways_items', '1..3')}. "
         "The item is eligible for the report; do not omit it because of a low score."
@@ -521,6 +531,7 @@ def build_final_digest_messages(
                 "The 30-second conclusion must teach something more specific than the title. "
                 "Why-it-matters must give a concrete reason to spend time: uncommon experience, "
                 "new data, mechanism, market signal, policy implication, or reusable framework. "
+                f"{DEEP_SUMMARY_GUIDANCE} "
                 "Core points must be claims with support, not topic labels. "
                 "Takeaways must be usable actions or reader lenses, not research questions. "
                 "Every factual or interpretive field with source_refs must cite valid evidence refs. "

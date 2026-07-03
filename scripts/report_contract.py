@@ -127,9 +127,9 @@ def normalize_digest(
     short_title = compact_text(raw.get("short_title") or item.get("title") or "未命名内容", 18)
     one_liner = compact_text(_text_value(raw.get("one_liner")), 30)
     why_it_matters = compact_text(_text_value(raw.get("why_it_matters")), 60)
-    summary = _strings(raw.get("summary"), 6, 150)
-    core_points = _strings(raw.get("core_points"), 7, 90)
-    takeaways = _strings(raw.get("takeaways"), 2, 70)
+    summary = _strings(raw.get("summary"), 10, 420)
+    core_points = _strings(raw.get("core_points"), 8, 90)
+    takeaways = _strings(raw.get("takeaways"), 3, 70)
     guests = _strings(raw.get("guests"), 5, 90)
     topics = _strings(raw.get("topics"), 3, 12)
     tensions = _strings(raw.get("tensions"), 3, 90)
@@ -148,7 +148,7 @@ def normalize_digest(
         if not isinstance(fact, dict):
             continue
         label = compact_text(fact.get("label"), 18)
-        value = compact_text(fact.get("value"), 36)
+        value = compact_text(fact.get("value"), 80)
         context = compact_text(fact.get("context"), 90)
         refs = _refs(fact.get("source_refs"), valid_refs)
         if not label or not (value or context):
@@ -310,7 +310,11 @@ def enrich_report_from_legacy_markdown(report: dict[str, Any], markdown: str) ->
 
     items = report.get("items", [])
     for item, fields in zip(items, parsed):
-        summary = [clean_text(line) for line in fields.get("完整摘要", []) if clean_text(line)]
+        summary = [
+            clean_text(line)
+            for line in (fields.get("完整摘要 · 深读", []) + fields.get("完整摘要", []))
+            if clean_text(line)
+        ]
         core = []
         for line in fields.get("核心观点", []):
             match = re.match(r"^\d+\.\s+(.+)$", line)
@@ -322,9 +326,9 @@ def enrich_report_from_legacy_markdown(report: dict[str, Any], markdown: str) ->
             if match:
                 guests.append(clean_text(match.group(1)))
         if len(summary) > len(item.get("summary", [])):
-            item["summary"] = summary[:6]
+            item["summary"] = summary[:10]
         if len(core) > len(item.get("core_points", [])):
-            item["core_points"] = core[:7]
+            item["core_points"] = core[:8]
         if guests:
             item["guests"] = guests[:5]
         if len(item.get("summary", [])) >= 4:
@@ -450,7 +454,7 @@ def report_to_feishu_xml(report: dict[str, Any]) -> str:
             summary = item.get("summary", [])
             if summary:
                 parts.append('<p><b>完整摘要 · 深读</b></p>')
-                parts.extend(f'<p>{_x(paragraph)}</p>' for paragraph in summary[:6])
+                parts.extend(f'<p>{_x(paragraph)}</p>' for paragraph in summary[:10])
 
             core = item.get("core_points", [])
             takeaways = item.get("takeaways", [])
