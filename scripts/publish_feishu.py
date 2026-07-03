@@ -182,9 +182,8 @@ def _consume_list(lines: list[str], start: int, ordered: bool) -> tuple[str, int
 def markdown_to_feishu_xml(markdown: str) -> str:
     """Render report Markdown as strict lark-doc XML.
 
-    The previous implementation mixed raw Markdown inside XML callouts while
-    telling lark-cli to parse the whole document as Markdown. That produced
-    literal tags, flattened sections and inconsistent lists in Feishu.
+    The previous implementation mixed raw Markdown inside XML callouts, which
+    produced literal tags, flattened sections and inconsistent lists in Feishu.
     """
     lines = markdown.replace("\r\n", "\n").splitlines()
     if lines and re.match(r"^# \d{4}-\d{2}-\d{2} .+日报\s*$", lines[0]):
@@ -250,66 +249,236 @@ def assert_no_encoding_damage(text: str, label: str) -> None:
         raise ValueError(f"{label} contains long runs of question marks; possible encoding damage")
 
 
-def write_doc_via_larkcli(
+def feishu_json_request(
+    method: str,
+    path: str,
+    token: str,
+    *,
+    params: dict[str, Any] | None = None,
+    body: dict[str, Any] | None = None,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    """Call a Feishu OpenAPI JSON endpoint with small CI-friendly retries."""
+    url = f"{FEISHU_API}{path}"
+    for attempt in range(4):
+        try:
+            resp = requests.request(
+                method,
+                url,
+                headers=feishu_headers(token),
+                params=params,
+                json=body,
+                timeout=timeout,
+            )
+            if resp.status_code in {429, 500, 502, 503, 504}:
+                resp.raise_for_status()
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code", 0) != 0:
+                raise RuntimeError(f"Feishu API error {method} {path}: {data}")
+            return data
+        except (requests.RequestException, ValueError, RuntimeError):
+            if attempt == 3:
+                raise
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f"Feishu API request failed without response: {method} {path}")
+
+
+def _xml_text(element: ET.Element) -> str:
+    return re.sub(r"\s+", " ", "".join(element.itertext())).strip()
+
+
+def _table_rows_to_lines(table: ET.Element) -> list[str]:
+    lines: list[str] = []
+    rows = table.findall(".//tr")
+    for index, row in enumerate(rows):
+        cells = [_xml_text(cell) for cell in list(row) if cell.tag in {"th", "td"}]
+        if index == 0 and any(cell.tag == "th" for cell in list(row)):
+            continue
+        if any(cells):
+            if len(cells) == 2:
+                lines.append(f"{cells[0]}：{cells[1]}")
+            else:
+                lines.append(" | ".join(cells))
+    return lines
+
+
+def split_doc_line(line: str, limit: int = 1800) -> list[str]:
+    if len(line) <= limit:
+        return [line]
+    chunks: list[str] = []
+    start = 0
+    while start < len(line):
+        end = min(len(line), start + limit)
+        cut = max(line.rfind(mark, start, end) for mark in "。！？；， ")
+        if cut <= start + limit // 2:
+            cut = end
+        elif cut < len(line) and line[cut] in "。！？；，":
+            cut += 1
+        chunks.append(line[start:cut].strip())
+        start = cut
+    return [chunk for chunk in chunks if chunk]
+
+
+TEXT_LIKE_BLOCK_FIELDS = {
+    2: "text",
+    3: "heading1",
+    4: "heading2",
+    5: "heading3",
+    6: "heading4",
+    7: "heading5",
+    8: "heading6",
+    9: "heading7",
+    10: "heading8",
+    11: "heading9",
+    12: "bullet",
+    13: "ordered",
+    15: "quote",
+}
+
+
+def text_block(content: str, block_type: int = 2) -> dict[str, Any]:
+    field = TEXT_LIKE_BLOCK_FIELDS[block_type]
+    return {
+        "block_type": block_type,
+        field: {
+            "elements": [
+                {
+                    "text_run": {
+                        "content": content,
+                        "text_element_style": {},
+                    }
+                }
+            ],
+            "style": {},
+        },
+    }
+
+
+def xml_to_docx_blocks(xml_content: str) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    root = ET.fromstring(f"<root>{xml_content}</root>")
+
+    def add_text(value: str, block_type: int = 2) -> None:
+        text = re.sub(r"\s+", " ", value).strip()
+        if not text:
+            return
+        for chunk in split_doc_line(text):
+            blocks.append(text_block(chunk, block_type=block_type))
+
+    def walk(element: ET.Element) -> None:
+        tag = element.tag.lower()
+        if re.fullmatch(r"h[1-6]", tag):
+            level = int(tag[1])
+            add_text(_xml_text(element), block_type=level + 2)
+        elif tag == "p":
+            add_text(_xml_text(element))
+        elif tag == "blockquote":
+            add_text(_xml_text(element), block_type=15)
+        elif tag == "hr":
+            blocks.append({"block_type": 22, "divider": {}})
+        elif tag == "ul":
+            for item in element.findall("./li"):
+                add_text(_xml_text(item), block_type=12)
+        elif tag == "ol":
+            for item in element.findall("./li"):
+                add_text(_xml_text(item), block_type=13)
+        elif tag == "table":
+            for line in _table_rows_to_lines(element):
+                add_text(line, block_type=12)
+        elif tag == "callout":
+            for child in list(element):
+                walk(child)
+        else:
+            for child in list(element):
+                walk(child)
+
+    for child in list(root):
+        walk(child)
+    return blocks or [text_block("（空日报）")]
+
+
+def get_docx_root_block_id(token: str, doc_token: str) -> str:
+    data = feishu_json_request(
+        "GET",
+        f"/docx/v1/documents/{doc_token}/blocks",
+        token,
+        params={"document_revision_id": -1, "page_size": 500},
+    )
+    items = data.get("data", {}).get("items") or []
+    for item in items:
+        if item.get("block_type") == 1 and item.get("block_id"):
+            return str(item["block_id"])
+    if items and items[0].get("block_id"):
+        return str(items[0]["block_id"])
+    return doc_token
+
+
+def get_docx_child_count(token: str, doc_token: str, root_block_id: str) -> int:
+    count = 0
+    page_token = ""
+    while True:
+        params: dict[str, Any] = {"document_revision_id": -1, "page_size": 500}
+        if page_token:
+            params["page_token"] = page_token
+        data = feishu_json_request(
+            "GET",
+            f"/docx/v1/documents/{doc_token}/blocks/{root_block_id}/children",
+            token,
+            params=params,
+        )
+        payload = data.get("data", {})
+        count += len(payload.get("items") or [])
+        if not payload.get("has_more"):
+            break
+        page_token = payload.get("page_token", "")
+        if not page_token:
+            break
+    return count
+
+
+def delete_docx_children(token: str, doc_token: str, root_block_id: str) -> None:
+    child_count = get_docx_child_count(token, doc_token, root_block_id)
+    if child_count <= 0:
+        return
+    feishu_json_request(
+        "DELETE",
+        f"/docx/v1/documents/{doc_token}/blocks/{root_block_id}/children/batch_delete",
+        token,
+        params={"document_revision_id": -1},
+        body={"start_index": 0, "end_index": child_count},
+    )
+
+
+def write_doc_via_openapi(
+    token: str,
     doc_token: str,
     xml_content: str,
-    app_id: str,
-    app_secret: str,
     command: str = "append",
 ) -> None:
-    """Write deterministic XML to a Feishu docx using lark-cli."""
-    import shutil
-    import subprocess
-    import tempfile
+    """Write a Feishu Docx document using OpenAPI only; no local CLI config needed."""
+    blocks = xml_to_docx_blocks(xml_content)
+    root_block_id = get_docx_root_block_id(token, doc_token)
+    if command == "overwrite":
+        delete_docx_children(token, doc_token, root_block_id)
+        insert_index = 0
+    else:
+        insert_index = 0
 
-    lark_cli = shutil.which("lark-cli")
-    if not lark_cli:
-        raise RuntimeError(
-            "lark-cli not found in PATH. Install with: npm install -g @larksuite/cli"
+    batch_size = max(1, int(os.getenv("FEISHU_DOCX_BLOCK_BATCH_SIZE", "40")))
+    for start in range(0, len(blocks), batch_size):
+        chunk = blocks[start : start + batch_size]
+        feishu_json_request(
+            "POST",
+            f"/docx/v1/documents/{doc_token}/blocks/{root_block_id}/children",
+            token,
+            params={"document_revision_id": -1},
+            body={"index": insert_index, "children": chunk},
+            timeout=60,
         )
-
-    ET.fromstring(f"<root>{xml_content}</root>")
-
-    # Write enhanced markdown to temp file in repo root (lark-cli requires relative paths)
-    repo_root = Path(__file__).resolve().parent.parent
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".xml", encoding="utf-8", delete=False, dir=str(repo_root)
-    ) as f:
-        f.write(xml_content)
-        temp_path = f.name
-        temp_rel = os.path.relpath(temp_path, str(repo_root))
-
-    try:
-        env = os.environ.copy()
-        env["FEISHU_APP_ID"] = app_id
-        env["FEISHU_APP_SECRET"] = app_secret
-
-        # Write content to doc (lark-cli reads FEISHU_APP_ID/SECRET from env)
-        result = subprocess.run(
-            [
-                lark_cli, "docs", "+update",
-                "--doc", doc_token,
-                "--command", command,
-                "--doc-format", "xml",
-                "--content", f"@{temp_rel}",
-                "--as", "bot",
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=120,
-            env=env,
-            cwd=str(repo_root),
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"lark-cli docs +update failed (exit {result.returncode}):\n"
-                f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
-            )
-        print(f"lark-cli: {command} wrote {len(xml_content)} chars to doc {doc_token}")
-    finally:
-        os.unlink(temp_path)
+        insert_index += len(chunk)
+        time.sleep(0.4)
+    print(f"Feishu OpenAPI wrote {len(blocks)} text block(s) to doc {doc_token}")
 
 
 def notify(title: str, url: str, summary: str) -> None:
@@ -602,8 +771,6 @@ def main() -> int:
 
     try:
         token = get_tenant_access_token()
-        app_id = required_env("FEISHU_APP_ID")
-        app_secret = required_env("FEISHU_APP_SECRET")
         if args.doc_token:
             document_id = args.doc_token
             node_token = args.node_token
@@ -611,7 +778,7 @@ def main() -> int:
         else:
             document_id, node_token = create_wiki_doc(token, args.title)
             command = "append"
-        write_doc_via_larkcli(document_id, xml_content, app_id, app_secret, command=command)
+        write_doc_via_openapi(token, document_id, xml_content, command=command)
         reordered = sort_daily_reports_below_pinned_page(token)
         if reordered:
             print(f"Reordered {reordered} daily report node(s) below the pinned Wiki page")

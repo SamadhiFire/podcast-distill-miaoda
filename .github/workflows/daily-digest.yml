@@ -174,10 +174,6 @@ jobs:
             --output "$REPORT_PATH" \
             --output-json "$REPORT_JSON_PATH"
 
-      - name: Install lark-cli
-        if: ${{ github.event.inputs.dry_run_feishu != 'true' }}
-        run: npm install -g @larksuite/cli@1.0.59
-
       - name: Publish to Feishu Wiki and notify group
         env:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}

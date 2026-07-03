@@ -139,6 +139,6 @@ python scripts/publish_feishu.py \
 - `text_chars` 为空或与本地文本长度不一致。
 - `coverage_ratio < 0.95`。
 - 字幕来源不是 `official_caption`、`auto_caption` 或 `asr`。
-- 待发布内容出现明显编码损坏，例如连续 `????`。
+- 待发布内容出现明显编码损坏，例如连续问号乱码。
 
 无论成功或失败，GitHub Actions 都会上传运行 artifacts，便于排查。
