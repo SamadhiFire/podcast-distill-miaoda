@@ -877,8 +877,10 @@ def should_use_direct_fileid(item: dict[str, Any], transcript: str) -> bool:
     if os.getenv("LLM_FILEID_DIRECT_ENABLED", "1") == "0":
         return False
     duration = int(item.get("duration") or item.get("duration_seconds") or 0)
-    min_duration = int(os.getenv("LLM_FILEID_DIRECT_MIN_DURATION_SECONDS", "3600"))
-    min_chars = int(os.getenv("LLM_FILEID_DIRECT_MIN_CHARS", "80000"))
+    if duration < 300:
+        return False
+    min_duration = int(os.getenv("LLM_FILEID_DIRECT_MIN_DURATION_SECONDS", "300"))
+    min_chars = int(os.getenv("LLM_FILEID_DIRECT_MIN_CHARS", "1"))
     return bool(transcript.strip()) and (duration >= min_duration or len(transcript) >= min_chars)
 
 
