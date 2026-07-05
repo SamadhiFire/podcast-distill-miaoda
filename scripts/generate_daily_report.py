@@ -669,13 +669,26 @@ def is_data_inspection_error(exc: Exception) -> bool:
 
 def is_context_length_error(exc: Exception) -> bool:
     text = str(exc).lower()
-    return (
+    explicit_context_error = (
         "exceeds token limit" in text
         or "token limit" in text
         or "context length" in text
         or "maximum context" in text
-        or "invalid_parameter_error" in text
     )
+    invalid_parameter_length_error = (
+        "invalid_parameter_error" in text
+        and ("input" in text or "context" in text)
+        and ("length" in text or "token" in text)
+    )
+    return explicit_context_error or invalid_parameter_length_error
+
+
+def metadata_fallback_enabled() -> bool:
+    return os.getenv("LLM_METADATA_FALLBACK_ENABLED", "1").lower() not in {
+        "0",
+        "false",
+        "no",
+    }
 
 
 DATA_INSPECTION_SUMMARY_NOTE = (
@@ -885,9 +898,15 @@ def should_use_direct_fileid(item: dict[str, Any], transcript: str) -> bool:
         return False
     min_duration = int(os.getenv("LLM_FILEID_DIRECT_MIN_DURATION_SECONDS", "300"))
     min_chars = int(os.getenv("LLM_FILEID_DIRECT_MIN_CHARS", "1"))
-    max_duration = int(os.getenv("LLM_FILEID_DIRECT_MAX_DURATION_SECONDS", "1800"))
-    max_chars = int(os.getenv("LLM_FILEID_DIRECT_MAX_CHARS", "30000"))
-    if duration > max_duration or len(transcript) > max_chars:
+    # A zero maximum means unlimited. qwen-long file uploads exist specifically
+    # to keep long transcripts out of the inline chat context, so imposing a
+    # small default ceiling here defeats file-id mode and re-enters the legacy
+    # segmented pipeline for the longest episodes.
+    max_duration = int(os.getenv("LLM_FILEID_DIRECT_MAX_DURATION_SECONDS", "0"))
+    max_chars = int(os.getenv("LLM_FILEID_DIRECT_MAX_CHARS", "0"))
+    if max_duration > 0 and duration > max_duration:
+        return False
+    if max_chars > 0 and len(transcript) > max_chars:
         return False
     return bool(transcript.strip()) and (duration >= min_duration or len(transcript) >= min_chars)
 
@@ -1642,7 +1661,12 @@ def summarize_item_contract(
                 fileid_cache_dir,
             )
         except Exception as exc:
-            if is_data_inspection_error(exc):
+            direct_required = os.getenv("LLM_FILEID_DIRECT_REQUIRED", "0").lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+            if direct_required or is_data_inspection_error(exc):
                 raise
             print(
                 f"Direct qwen-long fileid synthesis failed for {item.get('title')}: {exc}; "
@@ -1812,6 +1836,14 @@ def main() -> int:
             )
             write_digest_cache(digest_cache_dir, args.date, item, digest)
         except Exception as exc:
+            if not metadata_fallback_enabled() and (
+                is_data_inspection_error(exc) or is_context_length_error(exc)
+            ):
+                print(
+                    f"Full-transcript LLM digest failed for {item.get('title')}: {exc}",
+                    flush=True,
+                )
+                return 4
             if is_data_inspection_error(exc):
                 print(
                     f"LLM input inspection failed for {item.get('title')}; "

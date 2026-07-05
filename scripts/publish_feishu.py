@@ -530,8 +530,8 @@ def delete_wiki_node(token: str, node_token: str) -> bool:
 def update_wiki_node_title(token: str, node_token: str, title: str) -> None:
     """Update the wiki node title to match the document title."""
     space_id = required_env("FEISHU_WIKI_SPACE_ID")
-    resp = requests.patch(
-        f"{FEISHU_API}/wiki/v2/spaces/{space_id}/nodes/{node_token}",
+    resp = requests.post(
+        f"{FEISHU_API}/wiki/v2/spaces/{space_id}/nodes/{node_token}/update_title",
         headers=feishu_headers(token),
         json={"title": title},
         timeout=30,

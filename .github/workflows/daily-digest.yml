@@ -164,10 +164,14 @@ jobs:
           LLM_FILEID_ENABLED: "1"
           LLM_FILEID_MIN_DURATION_SECONDS: "300"
           LLM_FILEID_DIRECT_ENABLED: "1"
+          LLM_FILEID_DIRECT_REQUIRED: "1"
           LLM_FILEID_DIRECT_MIN_DURATION_SECONDS: "300"
           LLM_FILEID_DIRECT_MIN_CHARS: "1"
-          LLM_FILEID_DIRECT_MAX_DURATION_SECONDS: "1800"
-          LLM_FILEID_DIRECT_MAX_CHARS: "30000"
+          # 0 means unlimited: long transcripts must stay in file-id mode.
+          LLM_FILEID_DIRECT_MAX_DURATION_SECONDS: "0"
+          LLM_FILEID_DIRECT_MAX_CHARS: "0"
+          # Never publish a metadata-only digest as a successful required run.
+          LLM_METADATA_FALLBACK_ENABLED: "0"
           LLM_FILE_UPLOAD_TIMEOUT: "600"
           LLM_FILE_READY_TIMEOUT: "300"
         run: |
