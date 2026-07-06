@@ -73,6 +73,19 @@ def duration_of(item: dict[str, Any]) -> float | None:
         return None
 
 
+def item_requires_transcript(item: Any, min_duration_seconds: float) -> bool:
+    if not isinstance(item, dict):
+        return False
+    duration = duration_of(item)
+    return duration is not None and duration >= min_duration_seconds
+
+
+def has_required_transcript_items(items: Any, min_duration_seconds: float) -> bool:
+    if not isinstance(items, list):
+        return True
+    return any(item_requires_transcript(item, min_duration_seconds) for item in items)
+
+
 def is_youtube_collection_url(url: str) -> bool:
     parsed = urlparse(url or "")
     if "youtube.com" not in parsed.netloc.lower():
@@ -142,7 +155,7 @@ def validate_manifest(manifest: Any, failures: list[str]) -> None:
         failures.append(f"manifest contains errors/failures: {json.dumps(errors, ensure_ascii=False)[:1200]}")
 
 
-def validate_bundle_zip(path: Path, failures: list[str]) -> None:
+def validate_bundle_zip(path: Path, failures: list[str], require_subtitles_root: bool = True) -> None:
     if not path.exists():
         failures.append(f"{path}: subtitles bundle zip not found")
         return
@@ -152,7 +165,7 @@ def validate_bundle_zip(path: Path, failures: list[str]) -> None:
     except zipfile.BadZipFile as exc:
         failures.append(f"{path}: invalid zip file: {exc}")
         return
-    if not any(name.startswith("subtitles/") for name in names):
+    if require_subtitles_root and not any(name.startswith("subtitles/") for name in names):
         failures.append(f"{path}: zip does not contain subtitles/ root")
 
 
@@ -162,11 +175,13 @@ def validate_transcript_meta(
     min_duration_seconds: float,
     failures: list[str],
     warnings: list[str],
+    require_metadata: bool = True,
 ) -> dict[str, dict[str, Any]]:
     index: dict[str, dict[str, Any]] = {}
     meta_paths = sorted(subtitles_dir.glob("*.json"))
     if not meta_paths:
-        failures.append(f"{subtitles_dir}: no per-item transcript metadata found")
+        if require_metadata:
+            failures.append(f"{subtitles_dir}: no per-item transcript metadata found")
         return index
 
     for meta_path in meta_paths:
@@ -295,11 +310,13 @@ def main() -> int:
 
     items = load_json(items_path)
     manifest = load_json(manifest_path)
+    requires_transcripts = has_required_transcript_items(items, args.min_duration_seconds)
     validate_manifest(manifest, failures)
     if args.bundle_zip:
-        validate_bundle_zip(Path(args.bundle_zip), failures)
+        validate_bundle_zip(Path(args.bundle_zip), failures, require_subtitles_root=requires_transcripts)
     if not subtitles_dir.exists():
-        failures.append(f"{subtitles_dir}: directory not found")
+        if requires_transcripts:
+            failures.append(f"{subtitles_dir}: directory not found")
         transcript_index: dict[str, dict[str, Any]] = {}
     else:
         transcript_index = validate_transcript_meta(
@@ -308,7 +325,10 @@ def main() -> int:
             args.min_duration_seconds,
             failures,
             warnings,
+            require_metadata=requires_transcripts,
         )
+    if not requires_transcripts:
+        warnings.append("no daily items require transcripts; empty subtitle artifacts are allowed")
     item_count, required_count = validate_items(
         items,
         transcript_index,

@@ -405,8 +405,10 @@ def _facts_table(facts: list[dict[str, Any]]) -> str:
 def report_to_feishu_xml(report: dict[str, Any]) -> str:
     items = report.get("items", [])
     themes = report.get("themes", [])
-    platform_text = " · ".join(f"{name} {count} 条" for name, count in report.get("platform_counts", {}).items())
-    theme_text = " · ".join(themes) if themes else "多主题更新"
+    platform_text = (
+        " · ".join(f"{name} {count} 条" for name, count in report.get("platform_counts", {}).items()) or "无"
+    )
+    theme_text = "今日无新增" if not items else (" · ".join(themes) if themes else "多主题更新")
     title = report.get("title") or f"{report.get('date', '')} 播客与视频更新日报"
     parts: list[str] = [f"<title>{_x(title)}</title>"]
 
@@ -434,6 +436,11 @@ def report_to_feishu_xml(report: dict[str, Any]) -> str:
         parts.append(f'<whiteboard type="mermaid">{diagram}</whiteboard>')
 
     parts.append('<h1>3 分钟速览</h1>')
+    if not items:
+        parts.append(
+            '<callout emoji="📭" background-color="light-gray" border-color="gray">'
+            '<p>今日无新增。</p></callout>'
+        )
     top_indices = report.get("top_items") or list(range(min(3, len(items))))
     for rank, item_idx in enumerate(top_indices, 1):
         if not isinstance(item_idx, int) or not 0 <= item_idx < len(items):
@@ -540,6 +547,8 @@ def report_to_feishu_xml(report: dict[str, Any]) -> str:
 def report_to_markdown(report: dict[str, Any]) -> str:
     lines = [f"# {report.get('date')} 播客 / 视频更新日报", "", "# 3 分钟速览", ""]
     items = report.get("items", [])
+    if not items:
+        lines += ["今日无新增。", ""]
     for rank, idx in enumerate(report.get("top_items", [])[:3], 1):
         if isinstance(idx, int) and 0 <= idx < len(items):
             item = items[idx]

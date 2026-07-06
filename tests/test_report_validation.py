@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,11 +14,100 @@ from scripts.generate_daily_report import (
     should_use_direct_fileid,
     validate_final_digest,
 )
-from scripts.report_contract import enrich_report_from_legacy_markdown, normalize_digest
+from scripts.report_contract import (
+    CATEGORIES,
+    build_report,
+    enrich_report_from_legacy_markdown,
+    normalize_digest,
+    report_to_feishu_xml,
+    report_to_markdown,
+)
 from scripts.publish_feishu import FEISHU_API, update_wiki_node_title
+from scripts.validate_transcript_bundle import (
+    has_required_transcript_items,
+    validate_bundle_zip,
+    validate_items,
+    validate_transcript_meta,
+)
 
 
 class ReportValidationTests(unittest.TestCase):
+    def test_empty_daily_items_allow_empty_transcript_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subtitles_dir = root / "subtitles"
+            subtitles_dir.mkdir()
+            bundle_path = root / "subtitles_bundle.zip"
+            with zipfile.ZipFile(bundle_path, "w"):
+                pass
+
+            failures: list[str] = []
+            warnings: list[str] = []
+            items: list[dict[str, object]] = []
+
+            self.assertFalse(has_required_transcript_items(items, 300))
+            validate_bundle_zip(bundle_path, failures, require_subtitles_root=False)
+            transcript_index = validate_transcript_meta(
+                subtitles_dir,
+                0.95,
+                300,
+                failures,
+                warnings,
+                require_metadata=False,
+            )
+            item_count, required_count = validate_items(items, transcript_index, 0.95, 300, [], failures)
+
+            self.assertEqual(failures, [])
+            self.assertEqual(item_count, 0)
+            self.assertEqual(required_count, 0)
+            self.assertEqual(transcript_index, {})
+
+    def test_long_items_still_require_transcript_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subtitles_dir = root / "subtitles"
+            subtitles_dir.mkdir()
+            bundle_path = root / "subtitles_bundle.zip"
+            with zipfile.ZipFile(bundle_path, "w"):
+                pass
+
+            failures: list[str] = []
+            warnings: list[str] = []
+            items = [
+                {
+                    "platform": "youtube",
+                    "url": "https://www.youtube.com/watch?v=abc12345678",
+                    "duration": 300,
+                }
+            ]
+
+            self.assertTrue(has_required_transcript_items(items, 300))
+            validate_bundle_zip(bundle_path, failures, require_subtitles_root=True)
+            transcript_index = validate_transcript_meta(
+                subtitles_dir,
+                0.95,
+                300,
+                failures,
+                warnings,
+                require_metadata=True,
+            )
+            validate_items(items, transcript_index, 0.95, 300, [], failures)
+
+            self.assertTrue(any("zip does not contain subtitles/ root" in failure for failure in failures))
+            self.assertTrue(any("no per-item transcript metadata found" in failure for failure in failures))
+            self.assertTrue(any("missing transcript metadata" in failure for failure in failures))
+
+    def test_empty_report_has_no_update_placeholders(self) -> None:
+        report = build_report("2026-07-06", [])
+
+        markdown = report_to_markdown(report)
+        self.assertIn("# 3 分钟速览\n\n今日无新增。", markdown)
+        for category in CATEGORIES:
+            self.assertIn(f"## {category}\n\n今日无新增。", markdown)
+
+        xml = report_to_feishu_xml(report)
+        self.assertIn("今日无新增", xml)
+
     def test_context_classifier_does_not_hide_unrelated_invalid_parameters(self) -> None:
         self.assertFalse(is_context_length_error(RuntimeError("invalid_parameter_error: bad temperature")))
         self.assertTrue(
