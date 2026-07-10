@@ -112,7 +112,7 @@ class ReportValidationTests(unittest.TestCase):
         xml = report_to_feishu_xml(report)
         self.assertIn("今日无新增", xml)
 
-    def test_information_map_uses_persistent_grid_instead_of_whiteboard_import(self) -> None:
+    def test_information_map_uses_whiteboard_import(self) -> None:
         report = {
             "date": "2026-07-10",
             "items": [{"short_title": "测试", "category": "科技 / AI / VC"}],
@@ -123,9 +123,8 @@ class ReportValidationTests(unittest.TestCase):
         }
 
         xml = report_to_feishu_xml(report)
-        self.assertIn("<h1>今日信息地图</h1>\n<grid>", xml)
-        self.assertIn("跨来源主题聚合", xml)
-        self.assertNotIn("<whiteboard", xml)
+        self.assertIn("<h1>今日信息地图</h1>\n<whiteboard type=\"mermaid\">", xml)
+        self.assertIn("flowchart LR", xml)
 
     def test_context_classifier_does_not_hide_unrelated_invalid_parameters(self) -> None:
         self.assertFalse(is_context_length_error(RuntimeError("invalid_parameter_error: bad temperature")))
