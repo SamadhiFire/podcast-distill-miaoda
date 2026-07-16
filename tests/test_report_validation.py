@@ -4,7 +4,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, patch
 
 from scripts.generate_daily_report import (
     DIGEST_CACHE_VERSION,
@@ -32,8 +32,10 @@ from scripts.report_contract import (
 from scripts.publish_feishu import (
     FEISHU_API,
     create_wiki_doc,
-    sort_daily_reports_below_pinned_page,
+    get_or_create_root_wiki_doc,
+    list_wiki_nodes,
     update_wiki_node_title,
+    verify_root_daily_order,
 )
 from scripts.validate_transcript_bundle import (
     has_required_transcript_items,
@@ -361,44 +363,80 @@ class ReportValidationTests(unittest.TestCase):
             f"{FEISHU_API}/wiki/v2/spaces/space-1/nodes",
         )
         self.assertNotIn("parent_node_token", post.call_args.kwargs["json"])
+        self.assertNotIn("/move", post.call_args.args[0])
 
-    def test_new_daily_report_reorders_root_with_hub_first(self) -> None:
+    @patch("scripts.publish_feishu.requests.get")
+    def test_root_node_listing_reads_every_page(self, get) -> None:
+        first = MagicMock()
+        first.json.return_value = {
+            "code": 0,
+            "data": {
+                "items": [{"node_token": "one", "title": "第一页"}],
+                "has_more": True,
+                "page_token": "next-page",
+            },
+        }
+        second = MagicMock()
+        second.json.return_value = {
+            "code": 0,
+            "data": {
+                "items": [{"node_token": "two", "title": "第二页"}],
+                "has_more": False,
+            },
+        }
+        get.side_effect = [first, second]
+
+        with patch.dict(os.environ, {"FEISHU_WIKI_SPACE_ID": "space-1"}, clear=False):
+            nodes = list_wiki_nodes("tenant-token")
+
+        self.assertEqual([node["node_token"] for node in nodes], ["one", "two"])
+        self.assertNotIn("parent_node_token", get.call_args_list[0].kwargs["params"])
+        self.assertEqual(get.call_args_list[1].kwargs["params"]["page_token"], "next-page")
+
+    def test_publisher_contains_no_wiki_move_endpoint(self) -> None:
+        publisher = Path(__file__).parents[1] / "scripts" / "publish_feishu.py"
+        source = publisher.read_text(encoding="utf-8")
+        self.assertNotIn("/move", source)
+        self.assertNotIn("move_wiki_node", source)
+
+    def test_existing_exact_title_root_node_is_reused(self) -> None:
+        report = {"node_token": "jul-15", "title": "2026-07-15 播客与视频更新日报"}
+        with patch("scripts.publish_feishu.list_root_nodes", return_value=[report]), patch(
+            "scripts.publish_feishu.get_wiki_doc_token", return_value=("doc-15", "jul-15")
+        ) as resolve, patch("scripts.publish_feishu.create_wiki_doc") as create:
+            result = get_or_create_root_wiki_doc("tenant-token", report["title"])
+
+        self.assertEqual(result, ("doc-15", "jul-15", False))
+        resolve.assert_called_once_with("tenant-token", "jul-15")
+        create.assert_not_called()
+
+    def test_duplicate_exact_title_root_nodes_fail_without_writes(self) -> None:
+        title = "2026-07-15 播客与视频更新日报"
+        duplicates = [
+            {"node_token": "one", "title": title},
+            {"node_token": "two", "title": title},
+        ]
+        with patch("scripts.publish_feishu.list_root_nodes", return_value=duplicates), patch(
+            "scripts.publish_feishu.get_wiki_doc_token"
+        ) as resolve, patch("scripts.publish_feishu.create_wiki_doc") as create:
+            with self.assertRaisesRegex(RuntimeError, "Multiple root Wiki nodes"):
+                get_or_create_root_wiki_doc("tenant-token", title)
+
+        resolve.assert_not_called()
+        create.assert_not_called()
+
+    def test_root_daily_order_verification_is_read_only(self) -> None:
         hub = {"node_token": "hub", "title": "🎧 播客蒸馏室"}
         july_14 = {"node_token": "jul-14", "title": "2026-07-14 播客与视频更新日报"}
         july_15 = {"node_token": "jul-15", "title": "2026-07-15 播客与视频更新日报"}
-        initial_root = [july_14, july_15, hub]
-        expected_root = [hub, july_15, july_14]
-
-        with patch.dict(os.environ, {"FEISHU_WIKI_SPACE_ID": "space-1"}, clear=False), patch(
-            "scripts.publish_feishu.list_root_nodes",
-            side_effect=[initial_root, expected_root],
-        ), patch("scripts.publish_feishu.list_wiki_nodes", return_value=[]), patch(
-            "scripts.publish_feishu.move_wiki_node"
-        ) as move, patch("scripts.publish_feishu.time.sleep"):
-            self.assertEqual(sort_daily_reports_below_pinned_page("tenant-token"), 2)
-
-        self.assertEqual(
-            move.call_args_list,
-            [
-                call("tenant-token", "jul-14", parent_token="hub"),
-                call("tenant-token", "jul-15", parent_token="hub"),
-                call("tenant-token", "jul-15"),
-                call("tenant-token", "jul-14"),
-            ],
-        )
-
-    def test_daily_ordering_refuses_unrelated_root_nodes(self) -> None:
-        hub = {"node_token": "hub", "title": "🎧 播客蒸馏室"}
-        report = {"node_token": "jul-15", "title": "2026-07-15 播客与视频更新日报"}
         other = {"node_token": "other", "title": "其他根节点"}
 
-        with patch.dict(os.environ, {"FEISHU_WIKI_SPACE_ID": "space-1"}, clear=False), patch(
-            "scripts.publish_feishu.list_root_nodes", return_value=[hub, report, other]
-        ), patch("scripts.publish_feishu.move_wiki_node") as move:
-            with self.assertRaisesRegex(RuntimeError, "unrelated root nodes"):
-                sort_daily_reports_below_pinned_page("tenant-token")
+        with patch("scripts.publish_feishu.list_root_nodes", return_value=[other, hub, july_15, july_14]):
+            self.assertEqual(verify_root_daily_order("tenant-token"), "")
 
-        move.assert_not_called()
+        with patch("scripts.publish_feishu.list_root_nodes", return_value=[july_14, hub, july_15]):
+            warning = verify_root_daily_order("tenant-token")
+        self.assertIn("手动调整", warning)
 
     def test_legacy_markdown_enrichment_never_crosses_item_boundaries(self) -> None:
         report = {
