@@ -1,0 +1,177 @@
+- generic [ref=e1]:
+  - generic [ref=e33]:
+    - generic [ref=e38]:
+      - generic [ref=e42]:
+        - button [ref=e43] [cursor=pointer]:
+          - img [ref=e46]
+        - generic [ref=e48]:
+          - generic [ref=e50]:
+            - img [ref=e52]
+            - generic [ref=e56] [cursor=pointer]: 🎧 播客蒸馏室
+          - generic [ref=e59]: "最近修改: 昨天 18:39"
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - button "分享" [ref=e66] [cursor=pointer]:
+            - img [ref=e70]
+            - generic [ref=e72]: 分享
+          - button "编辑" [ref=e76] [cursor=pointer]:
+            - generic [ref=e77]:
+              - img [ref=e80]
+              - generic [ref=e82]: 编辑
+            - img [ref=e85]
+        - img [ref=e91] [cursor=pointer]
+        - button [ref=e94] [cursor=pointer]:
+          - img [ref=e96]
+        - button [ref=e100] [cursor=pointer]:
+          - img [ref=e102]
+        - button [ref=e104] [cursor=pointer]:
+          - img [ref=e106]
+        - button [ref=e112] [cursor=pointer]
+    - generic [ref=e116]:
+      - img [ref=e119]
+      - list [ref=e127] [cursor=pointer]:
+        - listitem
+        - listitem [ref=e128]:
+          - link "🎧 播客蒸馏室" [ref=e129]:
+            - /url: "#N9aRddVgnoT7xwx3Pthc02pAnQe"
+            - img [ref=e131]
+            - text: 🎧 播客蒸馏室
+        - listitem [ref=e133]:
+          - link "📌 怎么用？" [ref=e134]:
+            - /url: "#doxcncqtKUjBs5FgpyyDIw4Nzvd"
+            - img [ref=e136]
+            - text: 📌 怎么用？
+        - listitem [ref=e138]:
+          - link "🗂 五大分类" [ref=e139]:
+            - /url: "#doxcntbsxqu891ZnZdFCB7XpDTh"
+            - img [ref=e141]
+            - text: 🗂 五大分类
+        - listitem [ref=e143]:
+          - link "📡 信源清单" [ref=e144]:
+            - /url: "#doxcn6LAiOTKfPvZo6mR4DQtrPg"
+            - img [ref=e146]
+            - text: 📡 信源清单
+        - listitem [ref=e148]:
+          - link "🤖 Tech / AI / VC" [ref=e149]:
+            - /url: "#doxcnwmzRi1JwSN2wdoFNusyRcc"
+            - img [ref=e151]
+            - text: 🤖 Tech / AI / VC
+        - listitem [ref=e153]:
+          - link "💰 Business / Finance / Investing" [ref=e154]:
+            - /url: "#doxcnjgneBKiAkdCsViggqz2C4g"
+            - img [ref=e156]
+            - text: 💰 Business / Finance / Investing
+        - listitem [ref=e158]:
+          - link "🚀 Product / Startup / Management" [ref=e159]:
+            - /url: "#doxcni3jBuHABM0LTmLpkVDMYIg"
+            - img [ref=e161]
+            - text: 🚀 Product / Startup / Management
+        - listitem [ref=e163]:
+          - link "🌍 News / Commentary / Global Affairs" [ref=e164]:
+            - /url: "#doxcniwQkz8L4yhcBJzQ1yXwKmV"
+            - img [ref=e166]
+            - text: 🌍 News / Commentary / Global Affairs
+        - listitem [ref=e168]:
+          - link "🎭 Culture / Society / Humanities" [ref=e169]:
+            - /url: "#doxcnNM80YsY5xNJrLZZXMkwt8e"
+            - img [ref=e171]
+            - text: 🎭 Culture / Society / Humanities
+        - listitem [ref=e173]:
+          - link "📰 日报归档" [ref=e174]:
+            - /url: "#doxcnwZUPnMkj6V5QbcHGQGiDuc"
+            - img [ref=e176]
+            - text: 📰 日报归档
+        - listitem
+      - generic [ref=e179]:
+        - generic [ref=e182] [cursor=pointer]: 编辑封面
+        - generic [ref=e190]:
+          - generic [ref=e191]:
+            - heading "🎧 播客蒸馏室" [level=1] [ref=e193]:
+              - generic [ref=e195]: 🎧 播客蒸馏室
+            - generic [ref=e198]:
+              - generic [ref=e205] [cursor=pointer]:
+                - img [ref=e207]
+                - generic [ref=e209]: 陈炀
+              - generic [ref=e211]: 昨天修改
+          - generic [ref=e214]:
+            - generic [ref=e219]:
+              - generic [ref=e223] [cursor=pointer]: 🤖
+              - generic [ref=e225]:
+                - generic [ref=e230]: 每天早上 北京时间 06:00，机器人自动跑一遍 37 个播客和视频频道，提取完整字幕，用 AI 蒸馏成结构化摘要，发布到这个知识库。
+                - generic [ref=e235]: 你要做的只有一件事：打开日报，挑感兴趣的看。剩下的，代码帮你搞定。
+            - generic [ref=e241]: 📌 怎么用？
+            - generic [ref=e244]:
+              - generic [ref=e252]:
+                - generic [ref=e256] [cursor=pointer]: 📰
+                - generic [ref=e258]:
+                  - generic [ref=e263]: 看日报
+                  - generic [ref=e268]: 每日日报自动发布在本知识库，每天一篇，按日期命名。
+                  - generic [ref=e273]: 子页面列表在下方，点进去就能看最新内容。
+              - generic [ref=e276] [cursor=pointer]:
+                - img [ref=e277]
+                - img
+              - generic [ref=e288]:
+                - generic [ref=e292] [cursor=pointer]: 🔍
+                - generic [ref=e294]:
+                  - generic [ref=e299]: 挑着看
+                  - generic [ref=e304]: 每个条目标了推荐星级（★☆），从三星开始看就行。
+                  - generic [ref=e309]: 五大分类帮你快速定位感兴趣的话题。
+              - generic [ref=e312] [cursor=pointer]:
+                - img [ref=e313]
+                - img
+            - generic [ref=e322]: 🗂 五大分类
+            - generic [ref=e327]: 所有节目按话题归为五类，不区分平台。每篇日报也是这个结构：
+            - generic [ref=e335]:
+              - table [ref=e336]:
+                - row "分类 一句话定位 代表节目" [ref=e337]:
+                  - cell "分类" [ref=e338]:
+                    - generic [ref=e344]: 分类
+                  - cell "一句话定位" [ref=e345]:
+                    - generic [ref=e351]: 一句话定位
+                  - cell "代表节目" [ref=e352]:
+                    - generic [ref=e358]: 代表节目
+              - table [ref=e362]:
+                - rowgroup [ref=e367]:
+                  - row "🤖 Tech / AI / VC \"AI 又要取代谁了\" 42章经、No Priors、Dwarkesh、The OpenAI Podcast、What's Next" [ref=e368]:
+                    - cell "🤖 Tech / AI / VC" [ref=e369]:
+                      - generic [ref=e375]: 🤖 Tech / AI / VC
+                    - cell "\"AI 又要取代谁了\"" [ref=e376]:
+                      - generic [ref=e382]: "\"AI 又要取代谁了\""
+                    - cell "42章经、No Priors、Dwarkesh、The OpenAI Podcast、What's Next" [ref=e383]:
+                      - generic [ref=e389]: 42章经、No Priors、Dwarkesh、The OpenAI Podcast、What's Next
+                  - row "💰 Business / Finance \"钱到底去哪了\" 商业就是这样、Odd Lots、Bloomberg、Acquired、Invest Like The Best" [ref=e390]:
+                    - cell "💰 Business / Finance" [ref=e391]:
+                      - generic [ref=e397]: 💰 Business / Finance
+                    - cell "\"钱到底去哪了\"" [ref=e398]:
+                      - generic [ref=e404]: "\"钱到底去哪了\""
+                    - cell "商业就是这样、Odd Lots、Bloomberg、Acquired、Invest Like The Best" [ref=e405]:
+                      - generic [ref=e411]: 商业就是这样、Odd Lots、Bloomberg、Acquired、Invest Like The Best
+                  - row "🚀 Product / Startup \"怎么把东西做出来还卖出去\" 张小珺Jùn、Lenny's Podcast、The Knowledge Project、面基、高能量" [ref=e412]:
+                    - cell "🚀 Product / Startup" [ref=e413]:
+                      - generic [ref=e419]: 🚀 Product / Startup
+                    - cell "\"怎么把东西做出来还卖出去\"" [ref=e420]:
+                      - generic [ref=e426]: "\"怎么把东西做出来还卖出去\""
+                    - cell "张小珺Jùn、Lenny's Podcast、The Knowledge Project、面基、高能量" [ref=e427]:
+                      - generic [ref=e433]: 张小珺Jùn、Lenny's Podcast、The Knowledge Project、面基、高能量
+                  - row "🌍 News / Global \"世界又怎么了\" 晚点聊、The Daily、WSJ、Bloomberg Surveillance、The China Show" [ref=e434]:
+                    - cell "🌍 News / Global" [ref=e435]:
+                      - generic [ref=e441]: 🌍 News / Global
+                    - cell "\"世界又怎么了\"" [ref=e442]:
+                      - generic [ref=e448]: "\"世界又怎么了\""
+                    - cell "晚点聊、The Daily、WSJ、Bloomberg Surveillance、The China Show" [ref=e449]:
+                      - generic [ref=e455]: 晚点聊、The Daily、WSJ、Bloomberg Surveillance、The China Show
+                  - row "🎭 Culture / Society \"人为什么要活着\"（以及其他玄学） Lex Fridman、乱翻书、独树不成林、Revisionist History、Ruby的洞察" [ref=e456]:
+                    - cell "🎭 Culture / Society" [ref=e457]:
+                      - generic [ref=e463]: 🎭 Culture / Society
+                    - cell "\"人为什么要活着\"（以及其他玄学）" [ref=e464]:
+                      - generic [ref=e470]: "\"人为什么要活着\"（以及其他玄学）"
+                    - cell "Lex Fridman、乱翻书、独树不成林、Revisionist History、Ruby的洞察" [ref=e471]:
+                      - generic [ref=e477]: Lex Fridman、乱翻书、独树不成林、Revisionist History、Ruby的洞察
+            - generic [ref=e487]: 📡 信源清单
+            - generic [ref=e492]:
+              - generic [ref=e496] [cursor=pointer]: 💡
+              - generic [ref=e498]:
+                - generic [ref=e503]: 目前覆盖 37 个信源，横跨 小宇宙（中文播客）和 YouTube（英文播客/视频）两大平台。
+                - generic [ref=e508]: 想加新频道？把链接扔给我就行，加到配置里第二天就自动收录。
+            - generic [ref=e514]: 🤖 Tech / AI / VC
+  - textbox [active] [ref=e517]
